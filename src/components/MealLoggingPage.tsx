@@ -1,0 +1,1378 @@
+import { useState } from 'react';
+import { ArrowLeft, Plus, Trash2, Camera, Upload, Sparkles, MessageSquare, Barcode, ChevronDown, ChevronUp, Check, Save, Info } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Label } from './ui/label';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Textarea } from './ui/textarea';
+import { toast } from 'sonner@2.0.3';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+
+interface FoodItem {
+  id: string;
+  name: string;
+  servingSize: string;          // e.g., "1 cup (150g)"
+  amountConsumed: number;        // e.g., 0.75 servings
+  baseCalories: number;          // Calories per serving
+  baseProtein: number;           // Protein per serving
+  baseCarbs: number;             // Carbs per serving
+  baseFat: number;               // Fat per serving
+  baseFiber: number;             // Fiber per serving
+  calories: number;              // Calculated: baseCalories * amountConsumed
+  protein: number;               // Calculated
+  carbs: number;                 // Calculated
+  fat: number;                   // Calculated
+  fiber: number;                 // Calculated
+  isExpanded: boolean;
+}
+
+interface MealLoggingPageProps {
+  onBack: () => void;
+  onMealLogged: (meal: any) => void;
+}
+
+export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) {
+  const [activeTab, setActiveTab] = useState('manual');
+  const [mealName, setMealName] = useState('');
+  const [usePredefinedMeal, setUsePredefinedMeal] = useState(true);
+  const [predefinedMeal, setPredefinedMeal] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('lunch');
+  const [foodItems, setFoodItems] = useState<FoodItem[]>([
+    {
+      id: '1',
+      name: '',
+      servingSize: '',
+      amountConsumed: 1,
+      baseCalories: 0,
+      baseProtein: 0,
+      baseCarbs: 0,
+      baseFat: 0,
+      baseFiber: 0,
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      fiber: 0,
+      isExpanded: true,
+    },
+  ]);
+  
+  const [scanningItemId, setScanningItemId] = useState<string | null>(null);
+
+  // Calculate totals
+  const totals = foodItems.reduce(
+    (acc, item) => ({
+      calories: acc.calories + (item.calories || 0),
+      protein: acc.protein + (item.protein || 0),
+      carbs: acc.carbs + (item.carbs || 0),
+      fat: acc.fat + (item.fat || 0),
+      fiber: acc.fiber + (item.fiber || 0),
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
+  );
+
+  const addFoodItem = () => {
+    const newItem: FoodItem = {
+      id: Date.now().toString(),
+      name: '',
+      servingSize: '',
+      amountConsumed: 1,
+      baseCalories: 0,
+      baseProtein: 0,
+      baseCarbs: 0,
+      baseFat: 0,
+      baseFiber: 0,
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      fiber: 0,
+      isExpanded: true,
+    };
+    setFoodItems([...foodItems, newItem]);
+  };
+
+  const removeFoodItem = (id: string) => {
+    if (foodItems.length > 1) {
+      setFoodItems(foodItems.filter((item) => item.id !== id));
+    } else {
+      toast.error('You must have at least one food item');
+    }
+  };
+
+  const updateFoodItem = (id: string, updates: Partial<FoodItem>) => {
+    setFoodItems(foodItems.map((item) => {
+      if (item.id === id) {
+        const updatedItem = { ...item, ...updates };
+        
+        // Recalculate actual values if amount or base values changed
+        if ('amountConsumed' in updates || 'baseCalories' in updates || 'baseProtein' in updates || 
+            'baseCarbs' in updates || 'baseFat' in updates || 'baseFiber' in updates) {
+          const amount = updatedItem.amountConsumed;
+          updatedItem.calories = Math.round(updatedItem.baseCalories * amount);
+          updatedItem.protein = Math.round(updatedItem.baseProtein * amount * 10) / 10;
+          updatedItem.carbs = Math.round(updatedItem.baseCarbs * amount * 10) / 10;
+          updatedItem.fat = Math.round(updatedItem.baseFat * amount * 10) / 10;
+          updatedItem.fiber = Math.round(updatedItem.baseFiber * amount * 10) / 10;
+        }
+        
+        return updatedItem;
+      }
+      return item;
+    }));
+  };
+
+  const handleBarcodeScanned = (itemId: string, barcodeData: any) => {
+    updateFoodItem(itemId, {
+      name: barcodeData.name,
+      servingSize: barcodeData.servingSize,
+      baseCalories: barcodeData.calories,
+      baseProtein: barcodeData.protein,
+      baseCarbs: barcodeData.carbs,
+      baseFat: barcodeData.fat,
+      baseFiber: barcodeData.fiber,
+      amountConsumed: 1,
+    });
+    setScanningItemId(null);
+    toast.success('Barcode scanned! Values auto-filled.');
+  };
+
+  const toggleItemExpanded = (id: string) => {
+    setFoodItems(
+      foodItems.map((item) => (item.id === id ? { ...item, isExpanded: !item.isExpanded } : item))
+    );
+  };
+
+  const handleSaveMeal = () => {
+    // Validate
+    const hasValidItems = foodItems.some((item) => item.name && item.calories > 0);
+    if (!hasValidItems) {
+      toast.error('Please add at least one food item with a name and calories');
+      return;
+    }
+
+    const finalMealName = usePredefinedMeal
+      ? predefinedMeal.charAt(0).toUpperCase() + predefinedMeal.slice(1)
+      : mealName || 'Custom Meal';
+
+    const meal = {
+      id: Date.now().toString(),
+      name: finalMealName,
+      mealType: usePredefinedMeal ? predefinedMeal : 'snack',
+      items: foodItems.filter((item) => item.name && item.calories > 0),
+      calories: totals.calories,
+      protein: totals.protein,
+      carbs: totals.carbs,
+      fat: totals.fat,
+      fiber: totals.fiber,
+      timestamp: new Date(),
+    };
+
+    onMealLogged(meal);
+    toast.success(`✅ ${finalMealName} logged successfully! ${totals.calories} kcal added.`);
+    onBack();
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F7F9FA' }}>
+      {/* Header */}
+      <div className="bg-white border-b sticky top-0 z-10" style={{ borderColor: '#E8F4F2' }}>
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
+            style={{ color: '#102A43' }}
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <div className="flex-1">
+            <h1 className="text-2xl" style={{ color: '#102A43' }}>
+              Log Your Meal
+            </h1>
+            <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+              Add food items and track your nutrition
+            </p>
+          </div>
+          <button
+            onClick={handleSaveMeal}
+            className="p-2 rounded-full hover:bg-green-50 transition-colors flex items-center justify-center"
+            style={{ color: '#1C7C54' }}
+          >
+            <Save className="w-6 h-6" />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 max-w-4xl mx-auto w-full px-4 py-6 pb-24">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsTrigger value="manual" className="flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Manual</span>
+            </TabsTrigger>
+            <TabsTrigger value="barcode" className="flex items-center gap-2">
+              <Barcode className="w-4 h-4" />
+              <span className="hidden sm:inline">Barcode</span>
+            </TabsTrigger>
+            <TabsTrigger value="scan" className="flex items-center gap-2">
+              <Camera className="w-4 h-4" />
+              <span className="hidden sm:inline">Photo</span>
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4" />
+              <span className="hidden sm:inline">AI</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="manual">
+            <ManualEntryTab
+              mealName={mealName}
+              setMealName={setMealName}
+              usePredefinedMeal={usePredefinedMeal}
+              setUsePredefinedMeal={setUsePredefinedMeal}
+              predefinedMeal={predefinedMeal}
+              setPredefinedMeal={setPredefinedMeal}
+              foodItems={foodItems}
+              totals={totals}
+              addFoodItem={addFoodItem}
+              removeFoodItem={removeFoodItem}
+              updateFoodItem={updateFoodItem}
+              toggleItemExpanded={toggleItemExpanded}
+              scanningItemId={scanningItemId}
+              setScanningItemId={setScanningItemId}
+              onBarcodeScanned={handleBarcodeScanned}
+            />
+          </TabsContent>
+
+          <TabsContent value="barcode">
+            <BarcodeScanTab
+              onFoodDetected={(foodData) => {
+                const newItem: FoodItem = {
+                  id: Date.now().toString(),
+                  ...foodData,
+                  isExpanded: true,
+                };
+                setFoodItems([...foodItems, newItem]);
+                setActiveTab('manual');
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="scan">
+            <PhotoScanTab
+              onMealDetected={(mealData) => {
+                setFoodItems(mealData.items);
+                setMealName(mealData.name);
+                setUsePredefinedMeal(false);
+                setActiveTab('manual');
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="ai">
+            <AskFoodAITab
+              onMealParsed={(mealData) => {
+                setFoodItems(mealData.items);
+                setMealName(mealData.name);
+                setUsePredefinedMeal(false);
+                setActiveTab('manual');
+              }}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Bottom Action Bar */}
+      <div
+        className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg"
+        style={{ borderColor: '#E8F4F2' }}
+      >
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex gap-3">
+            <button
+              onClick={onBack}
+              className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+              style={{ borderColor: '#A8E6CF', color: '#102A43' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveMeal}
+              className="flex-1 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#1C7C54' }}
+            >
+              <Check className="w-5 h-5" />
+              Save Meal • {totals.calories} kcal
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Manual Entry Tab
+function ManualEntryTab({
+  mealName,
+  setMealName,
+  usePredefinedMeal,
+  setUsePredefinedMeal,
+  predefinedMeal,
+  setPredefinedMeal,
+  foodItems,
+  totals,
+  addFoodItem,
+  removeFoodItem,
+  updateFoodItem,
+  toggleItemExpanded,
+  scanningItemId,
+  setScanningItemId,
+  onBarcodeScanned,
+}: any) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
+  return (
+    <div className="space-y-6">
+      {/* Meal Name Section */}
+      <div className="bg-white rounded-xl p-6 shadow-sm">
+        <h3 className="mb-4" style={{ color: '#102A43' }}>
+          Meal Type
+        </h3>
+        
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setUsePredefinedMeal(true)}
+            className="px-4 py-2 rounded-lg transition-all flex items-center justify-center"
+            style={{
+              backgroundColor: usePredefinedMeal ? '#A8E6CF' : '#E8F4F2',
+              color: '#102A43',
+            }}
+          >
+            Preset
+          </button>
+          <button
+            onClick={() => setUsePredefinedMeal(false)}
+            className="px-4 py-2 rounded-lg transition-all flex items-center justify-center"
+            style={{
+              backgroundColor: !usePredefinedMeal ? '#A8E6CF' : '#E8F4F2',
+              color: '#102A43',
+            }}
+          >
+            Custom
+          </button>
+        </div>
+
+        {usePredefinedMeal ? (
+          <Select value={predefinedMeal} onValueChange={setPredefinedMeal}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="breakfast">🌅 Breakfast</SelectItem>
+              <SelectItem value="lunch">☀️ Lunch</SelectItem>
+              <SelectItem value="dinner">🌙 Dinner</SelectItem>
+              <SelectItem value="snack">🍪 Snack</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            placeholder="e.g., Shake, Post-Workout, Late-Night Bowl"
+            value={mealName}
+            onChange={(e) => setMealName(e.target.value)}
+          />
+        )}
+      </div>
+
+      {/* Total Nutrition Summary */}
+      <div className="bg-white rounded-xl p-6 shadow-md border-2" style={{ borderColor: '#A8E6CF' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 style={{ color: '#102A43' }}>Total Nutrition</h3>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowBreakdown(!showBreakdown)}
+                  className="p-1.5 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center"
+                  style={{ color: '#102A43', opacity: 0.6 }}
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>View per-item breakdown</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+
+        <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+          <div className="flex items-baseline justify-center gap-2 mb-4">
+            <motion.span
+              key={totals.calories}
+              initial={{ y: -10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="text-3xl"
+              style={{ color: '#1C7C54' }}
+            >
+              {totals.calories}
+            </motion.span>
+            <span className="text-lg" style={{ color: '#102A43', opacity: 0.7 }}>
+              kcal
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-3">
+            <div className="text-center">
+              <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>
+                Protein
+              </p>
+              <motion.p
+                key={totals.protein}
+                initial={{ y: -5, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                style={{ color: '#F5A623' }}
+              >
+                {totals.protein}g
+              </motion.p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>
+                Carbs
+              </p>
+              <motion.p
+                key={totals.carbs}
+                initial={{ y: -5, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                style={{ color: '#4DD4AC' }}
+              >
+                {totals.carbs}g
+              </motion.p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>
+                Fat
+              </p>
+              <motion.p
+                key={totals.fat}
+                initial={{ y: -5, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                style={{ color: '#6B47DC' }}
+              >
+                {totals.fat}g
+              </motion.p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>
+                Fiber
+              </p>
+              <motion.p
+                key={totals.fiber}
+                initial={{ y: -5, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                style={{ color: '#1C7C54' }}
+              >
+                {totals.fiber}g
+              </motion.p>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-xs text-center" style={{ color: '#102A43', opacity: 0.6 }}>
+          Your total nutrition updates automatically as you add or edit items.
+        </p>
+
+        {/* Per-Item Breakdown */}
+        <AnimatePresence>
+          {showBreakdown && foodItems.some((item: FoodItem) => item.name && item.calories > 0) && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mt-4 pt-4 border-t space-y-2"
+              style={{ borderColor: '#A8E6CF' }}
+            >
+              <p className="text-xs mb-2" style={{ color: '#102A43', opacity: 0.7 }}>
+                <strong>Per-item breakdown:</strong>
+              </p>
+              {foodItems.filter((item: FoodItem) => item.name && item.calories > 0).map((item: FoodItem) => (
+                <div key={item.id} className="text-xs flex justify-between" style={{ color: '#102A43', opacity: 0.8 }}>
+                  <span>{item.name}</span>
+                  <span>{item.calories} kcal</span>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Add Item Button */}
+      <button
+        onClick={addFoodItem}
+        className="w-full py-3 rounded-lg border-2 border-dashed transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+        style={{ borderColor: '#A8E6CF', color: '#1C7C54' }}
+      >
+        <Plus className="w-5 h-5" />
+        Add Item
+      </button>
+
+      {/* Food Items */}
+      <div className="space-y-4">
+        <h3 style={{ color: '#102A43' }}>Food Items ({foodItems.length})</h3>
+
+        {foodItems.map((item: FoodItem, index: number) => (
+          <FoodItemCard
+            key={item.id}
+            item={item}
+            index={index}
+            onUpdate={updateFoodItem}
+            onRemove={removeFoodItem}
+            onToggleExpand={toggleItemExpanded}
+            canRemove={foodItems.length > 1}
+            scanningItemId={scanningItemId}
+            setScanningItemId={setScanningItemId}
+            onBarcodeScanned={onBarcodeScanned}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Food Item Card Component
+function FoodItemCard({
+  item,
+  index,
+  onUpdate,
+  onRemove,
+  onToggleExpand,
+  canRemove,
+  scanningItemId,
+  setScanningItemId,
+  onBarcodeScanned,
+}: {
+  item: FoodItem;
+  index: number;
+  onUpdate: (id: string, updates: Partial<FoodItem>) => void;
+  onRemove: (id: string) => void;
+  onToggleExpand: (id: string) => void;
+  canRemove: boolean;
+  scanningItemId: string | null;
+  setScanningItemId: (id: string | null) => void;
+  onBarcodeScanned: (itemId: string, data: any) => void;
+}) {
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScanBarcode = () => {
+    setScanningItemId(item.id);
+    setIsScanning(true);
+    
+    // Simulate barcode scan
+    setTimeout(() => {
+      const mockBarcodeData = {
+        name: 'Optimum Nutrition Whey Protein',
+        servingSize: '1 scoop (30g)',
+        calories: 120,
+        protein: 24,
+        carbs: 3,
+        fat: 1,
+        fiber: 1,
+      };
+      onBarcodeScanned(item.id, mockBarcodeData);
+      setIsScanning(false);
+    }, 1500);
+  };
+
+  return (
+    <div className="bg-white rounded-xl overflow-hidden shadow-sm border-2" style={{ borderColor: '#E8F4F2' }}>
+      {/* Header */}
+      <div
+        className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={() => onToggleExpand(item.id)}
+      >
+        <div className="flex items-center gap-3 flex-1">
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm"
+            style={{ backgroundColor: '#A8E6CF', color: '#1C7C54' }}
+          >
+            {index + 1}
+          </div>
+          <div className="flex-1">
+            <p style={{ color: '#102A43' }}>{item.name || 'Untitled Item'}</p>
+            {!item.isExpanded && item.calories > 0 && (
+              <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                {item.amountConsumed !== 1 && `${item.amountConsumed}x servings • `}{item.calories} kcal
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {canRemove && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove(item.id);
+              }}
+              className="p-2 rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center"
+              style={{ color: '#E53E3E' }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          {item.isExpanded ? (
+            <ChevronUp className="w-5 h-5" style={{ color: '#102A43', opacity: 0.5 }} />
+          ) : (
+            <ChevronDown className="w-5 h-5" style={{ color: '#102A43', opacity: 0.5 }} />
+          )}
+        </div>
+      </div>
+
+      {/* Expanded Content */}
+      <AnimatePresence>
+        {item.isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="border-t"
+            style={{ borderColor: '#E8F4F2' }}
+          >
+            <div className="p-4 space-y-4">
+              {/* Food Name with Barcode Button */}
+              <div>
+                <Label>Food Name *</Label>
+                <div className="flex gap-2 mt-1.5">
+                  <Input
+                    placeholder="e.g., Grilled Chicken Breast"
+                    value={item.name}
+                    onChange={(e) => onUpdate(item.id, { name: e.target.value })}
+                    className="flex-1"
+                  />
+                  <button
+                    onClick={handleScanBarcode}
+                    disabled={isScanning}
+                    className="px-4 py-2 rounded-lg transition-all hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
+                    style={{ backgroundColor: '#A8E6CF', color: '#1C7C54' }}
+                  >
+                    {isScanning ? (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                      </motion.div>
+                    ) : (
+                      <Barcode className="w-4 h-4" />
+                    )}
+                    <span className="hidden sm:inline text-sm">Scan</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Serving Size and Amount Consumed */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Serving Size</Label>
+                  <Input
+                    placeholder="e.g., 1 cup (150g)"
+                    value={item.servingSize}
+                    onChange={(e) => onUpdate(item.id, { servingSize: e.target.value })}
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs mt-1" style={{ color: '#102A43', opacity: 0.5 }}>
+                    From barcode or manual entry
+                  </p>
+                </div>
+                <div>
+                  <Label>Amount Consumed (servings)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="1.0"
+                    value={item.amountConsumed || ''}
+                    onChange={(e) => onUpdate(item.id, { amountConsumed: parseFloat(e.target.value) || 1 })}
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs mt-1" style={{ color: '#102A43', opacity: 0.5 }}>
+                    e.g., 0.5, 1.2, 2.0
+                  </p>
+                </div>
+              </div>
+
+              {/* Base Nutrition (per serving) */}
+              <div className="p-3 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+                <p className="text-xs mb-2" style={{ color: '#102A43', opacity: 0.7 }}>
+                  <strong>Nutrition per serving:</strong>
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Calories (kcal) *</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      placeholder="120"
+                      value={item.baseCalories || ''}
+                      onChange={(e) => onUpdate(item.id, { baseCalories: parseFloat(e.target.value) || 0 })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Protein (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder="24"
+                      value={item.baseProtein || ''}
+                      onChange={(e) => onUpdate(item.id, { baseProtein: parseFloat(e.target.value) || 0 })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Carbs (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder="3"
+                      value={item.baseCarbs || ''}
+                      onChange={(e) => onUpdate(item.id, { baseCarbs: parseFloat(e.target.value) || 0 })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Fat (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder="1"
+                      value={item.baseFat || ''}
+                      onChange={(e) => onUpdate(item.id, { baseFat: parseFloat(e.target.value) || 0 })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Fiber (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder="1"
+                      value={item.baseFiber || ''}
+                      onChange={(e) => onUpdate(item.id, { baseFiber: parseFloat(e.target.value) || 0 })}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Calculated Totals for This Item */}
+              {item.amountConsumed > 0 && item.baseCalories > 0 && (
+                <div className="p-3 rounded-lg border-2" style={{ borderColor: '#A8E6CF', backgroundColor: 'white' }}>
+                  <p className="text-xs mb-2" style={{ color: '#1C7C54' }}>
+                    <strong>📊 Calculated for {item.amountConsumed} serving(s):</strong>
+                  </p>
+                  <div className="grid grid-cols-5 gap-2 text-center">
+                    <div>
+                      <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Calories</p>
+                      <p className="text-sm" style={{ color: '#1C7C54' }}>{item.calories}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Protein</p>
+                      <p className="text-sm" style={{ color: '#F5A623' }}>{item.protein}g</p>
+                    </div>
+                    <div>
+                      <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Carbs</p>
+                      <p className="text-sm" style={{ color: '#4DD4AC' }}>{item.carbs}g</p>
+                    </div>
+                    <div>
+                      <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Fat</p>
+                      <p className="text-sm" style={{ color: '#6B47DC' }}>{item.fat}g</p>
+                    </div>
+                    <div>
+                      <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Fiber</p>
+                      <p className="text-sm" style={{ color: '#1C7C54' }}>{item.fiber}g</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// Barcode Scan Tab
+function BarcodeScanTab({ onFoodDetected }: any) {
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannedData, setScannedData] = useState<any>(null);
+
+  const handleStartScan = () => {
+    setIsScanning(true);
+    // Simulate barcode scan
+    setTimeout(() => {
+      const mockData = {
+        name: 'Optimum Nutrition Gold Standard Whey',
+        servingSize: '1 scoop (30g)',
+        calories: 120,
+        protein: 24,
+        carbs: 3,
+        fat: 1,
+        fiber: 1,
+      };
+      setScannedData(mockData);
+      setIsScanning(false);
+      toast.success('Barcode scanned! Review and add to your meal.');
+    }, 2000);
+  };
+
+  const handleAddItem = () => {
+    if (scannedData) {
+      onFoodDetected(scannedData);
+      setScannedData(null);
+      toast.success('Item added to your meal!');
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-8 shadow-sm">
+      {!scannedData ? (
+        <div className="text-center">
+          <div
+            className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center"
+            style={{ backgroundColor: '#E8F4F2' }}
+          >
+            {isScanning ? (
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+              >
+                <Sparkles className="w-12 h-12" style={{ color: '#1C7C54' }} />
+              </motion.div>
+            ) : (
+              <Barcode className="w-12 h-12" style={{ color: '#1C7C54' }} />
+            )}
+          </div>
+
+          <h3 className="mb-2" style={{ color: '#102A43' }}>
+            {isScanning ? 'Scanning Barcode...' : 'Scan Product Barcode'}
+          </h3>
+          <p className="mb-6 text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+            {isScanning
+              ? 'Hold steady and keep the barcode in frame'
+              : 'Point your camera at the barcode on the package'}
+          </p>
+
+          {!isScanning && (
+            <button
+              onClick={handleStartScan}
+              className="px-8 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2 mx-auto"
+              style={{ backgroundColor: '#1C7C54' }}
+            >
+              <Camera className="w-5 h-5" />
+              Start Scanning
+            </button>
+          )}
+
+          <div className="mt-8 p-4 rounded-lg text-left" style={{ backgroundColor: '#E8F4F2' }}>
+            <p className="text-sm mb-2" style={{ color: '#102A43' }}>
+              <strong>📱 Tips for scanning:</strong>
+            </p>
+            <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
+              <li>• Make sure barcode is well-lit and in focus</li>
+              <li>• Hold camera 4-6 inches from the barcode</li>
+              <li>• Works with UPC, EAN, and QR codes</li>
+            </ul>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+            <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>
+              ✅ <strong>Product Found:</strong>
+            </p>
+            <div className="space-y-2">
+              <div>
+                <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
+                  Product Name:
+                </p>
+                <p style={{ color: '#102A43' }}>{scannedData.name}</p>
+              </div>
+              <div>
+                <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
+                  Serving Size:
+                </p>
+                <p style={{ color: '#102A43' }}>{scannedData.servingSize}</p>
+              </div>
+              <div className="h-px" style={{ backgroundColor: '#A8E6CF' }}></div>
+              <div className="flex justify-between">
+                <span style={{ color: '#102A43' }}>Calories:</span>
+                <strong style={{ color: '#102A43' }}>{scannedData.calories} kcal</strong>
+              </div>
+              <div className="grid grid-cols-4 gap-2 pt-2">
+                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                    Protein
+                  </p>
+                  <p className="text-sm" style={{ color: '#F5A623' }}>
+                    {scannedData.protein}g
+                  </p>
+                </div>
+                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                    Carbs
+                  </p>
+                  <p className="text-sm" style={{ color: '#4DD4AC' }}>
+                    {scannedData.carbs}g
+                  </p>
+                </div>
+                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                    Fat
+                  </p>
+                  <p className="text-sm" style={{ color: '#6B47DC' }}>
+                    {scannedData.fat}g
+                  </p>
+                </div>
+                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                    Fiber
+                  </p>
+                  <p className="text-sm" style={{ color: '#1C7C54' }}>
+                    {scannedData.fiber}g
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setScannedData(null)}
+              className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+              style={{ borderColor: '#A8E6CF', color: '#102A43' }}
+            >
+              Scan Another
+            </button>
+            <button
+              onClick={handleAddItem}
+              className="flex-1 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#1C7C54' }}
+            >
+              <Plus className="w-5 h-5" />
+              Add to Meal
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Photo Scan Tab
+function PhotoScanTab({ onMealDetected }: any) {
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzedData, setAnalyzedData] = useState<any>(null);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+        simulateAIAnalysis();
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const simulateAIAnalysis = () => {
+    setIsAnalyzing(true);
+    setTimeout(() => {
+      setAnalyzedData({
+        name: 'Grilled Chicken Salad',
+        items: [
+          {
+            id: '1',
+            name: 'Grilled Chicken Breast',
+            servingSize: '150g',
+            amountConsumed: 1,
+            baseCalories: 248,
+            baseProtein: 47,
+            baseCarbs: 0,
+            baseFat: 5,
+            baseFiber: 0,
+            calories: 248,
+            protein: 47,
+            carbs: 0,
+            fat: 5,
+            fiber: 0,
+            isExpanded: false,
+          },
+          {
+            id: '2',
+            name: 'Mixed Greens',
+            servingSize: '2 cups',
+            amountConsumed: 1,
+            baseCalories: 20,
+            baseProtein: 2,
+            baseCarbs: 4,
+            baseFat: 0,
+            baseFiber: 2,
+            calories: 20,
+            protein: 2,
+            carbs: 4,
+            fat: 0,
+            fiber: 2,
+            isExpanded: false,
+          },
+          {
+            id: '3',
+            name: 'Cherry Tomatoes',
+            servingSize: '1/2 cup',
+            amountConsumed: 1,
+            baseCalories: 27,
+            baseProtein: 1,
+            baseCarbs: 6,
+            baseFat: 0,
+            baseFiber: 2,
+            calories: 27,
+            protein: 1,
+            carbs: 6,
+            fat: 0,
+            fiber: 2,
+            isExpanded: false,
+          },
+          {
+            id: '4',
+            name: 'Olive Oil Dressing',
+            servingSize: '2 tbsp',
+            amountConsumed: 1,
+            baseCalories: 125,
+            baseProtein: 0,
+            baseCarbs: 2,
+            baseFat: 14,
+            baseFiber: 0,
+            calories: 125,
+            protein: 0,
+            carbs: 2,
+            fat: 14,
+            fiber: 0,
+            isExpanded: false,
+          },
+        ],
+      });
+      setIsAnalyzing(false);
+      toast.success('AI detected multiple items! Review and confirm.');
+    }, 2500);
+  };
+
+  const handleConfirmMeal = () => {
+    if (analyzedData) {
+      onMealDetected(analyzedData);
+      toast.success('Items added to your meal!');
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-8 shadow-sm">
+      {!selectedImage ? (
+        <div>
+          <label
+            htmlFor="photo-upload"
+            className="border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-gray-50"
+            style={{ borderColor: '#A8E6CF' }}
+          >
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center mb-4"
+              style={{ backgroundColor: '#E8F4F2' }}
+            >
+              <Upload className="w-10 h-10" style={{ color: '#1C7C54' }} />
+            </div>
+            <p className="mb-2" style={{ color: '#102A43' }}>
+              Drag & drop or click to upload
+            </p>
+            <p className="text-sm mb-4" style={{ color: '#102A43', opacity: 0.6 }}>
+              Take a photo of your meal
+            </p>
+            <input
+              id="photo-upload"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+          </label>
+
+          <div className="mt-6 p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+            <p className="text-sm mb-2" style={{ color: '#102A43' }}>
+              <strong>📸 Photo Tips:</strong>
+            </p>
+            <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
+              <li>• Good lighting helps AI detect foods better</li>
+              <li>• Capture the entire plate from above</li>
+              <li>• AI will identify each item separately</li>
+            </ul>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <img src={selectedImage} alt="Uploaded meal" className="w-full h-64 object-cover rounded-xl mb-4" />
+
+          {isAnalyzing ? (
+            <div className="text-center py-8">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                className="w-12 h-12 mx-auto mb-4"
+              >
+                <Sparkles className="w-12 h-12" style={{ color: '#1C7C54' }} />
+              </motion.div>
+              <p className="mb-1" style={{ color: '#102A43' }}>
+                Analyzing your meal...
+              </p>
+              <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                AI is detecting foods and calculating nutrition
+              </p>
+            </div>
+          ) : analyzedData ? (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+                <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>
+                  ✨ <strong>AI Detected {analyzedData.items.length} Items:</strong>
+                </p>
+                <ul className="space-y-1 text-sm" style={{ color: '#102A43' }}>
+                  {analyzedData.items.map((item: any, idx: number) => (
+                    <li key={idx}>
+                      • {item.name} ({item.portion}) - {item.calories} kcal
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setSelectedImage(null);
+                    setAnalyzedData(null);
+                  }}
+                  className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+                  style={{ borderColor: '#A8E6CF', color: '#102A43' }}
+                >
+                  Retake Photo
+                </button>
+                <button
+                  onClick={handleConfirmMeal}
+                  className="flex-1 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: '#1C7C54' }}
+                >
+                  <Check className="w-5 h-5" />
+                  Use These Items
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Ask Food AI Tab
+function AskFoodAITab({ onMealParsed }: any) {
+  const [userInput, setUserInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [parsedMeal, setParsedMeal] = useState<any>(null);
+
+  const handleAskAI = () => {
+    if (!userInput.trim()) {
+      toast.error('Please describe your meal');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    setTimeout(() => {
+      setParsedMeal({
+        name: 'Protein Shake',
+        items: [
+          {
+            id: '1',
+            name: 'Almond Milk',
+            servingSize: '1 cup',
+            amountConsumed: 1,
+            baseCalories: 30,
+            baseProtein: 1,
+            baseCarbs: 1,
+            baseFat: 2.5,
+            baseFiber: 1,
+            calories: 30,
+            protein: 1,
+            carbs: 1,
+            fat: 2.5,
+            fiber: 1,
+            isExpanded: false,
+          },
+          {
+            id: '2',
+            name: 'Whey Protein Powder',
+            servingSize: '1 scoop (30g)',
+            amountConsumed: 1,
+            baseCalories: 120,
+            baseProtein: 24,
+            baseCarbs: 3,
+            baseFat: 1,
+            baseFiber: 1,
+            calories: 120,
+            protein: 24,
+            carbs: 3,
+            fat: 1,
+            fiber: 1,
+            isExpanded: false,
+          },
+          {
+            id: '3',
+            name: 'Banana',
+            servingSize: '1 medium',
+            amountConsumed: 1,
+            baseCalories: 105,
+            baseProtein: 1,
+            baseCarbs: 27,
+            baseFat: 0,
+            baseFiber: 3,
+            calories: 105,
+            protein: 1,
+            carbs: 27,
+            fat: 0,
+            fiber: 3,
+            isExpanded: false,
+          },
+          {
+            id: '4',
+            name: 'Peanut Butter',
+            servingSize: '1 tbsp',
+            amountConsumed: 1,
+            baseCalories: 95,
+            baseProtein: 4,
+            baseCarbs: 3,
+            baseFat: 8,
+            baseFiber: 1,
+            calories: 95,
+            protein: 4,
+            carbs: 3,
+            fat: 8,
+            fiber: 1,
+            isExpanded: false,
+          },
+        ],
+      });
+      setIsProcessing(false);
+      toast.success('AI parsed your meal into items!');
+    }, 1800);
+  };
+
+  const handleUseItems = () => {
+    if (parsedMeal) {
+      onMealParsed(parsedMeal);
+      toast.success('Items added to your meal!');
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-8 shadow-sm">
+      <div className="space-y-5">
+        <div>
+          <Label htmlFor="ai-input">Describe what you ate</Label>
+          <Textarea
+            id="ai-input"
+            placeholder="e.g., Protein shake with almond milk, 1 scoop whey, banana, and peanut butter"
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            rows={4}
+            className="mt-1.5"
+            disabled={isProcessing}
+          />
+        </div>
+
+        <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+          <p className="text-sm mb-2" style={{ color: '#102A43' }}>
+            <strong>💡 Examples:</strong>
+          </p>
+          <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
+            <li>• "Chicken burrito with rice, beans, cheese, and guacamole"</li>
+            <li>• "Greek yogurt parfait with granola and mixed berries"</li>
+            <li>• "Grilled salmon with roasted vegetables and quinoa"</li>
+          </ul>
+        </div>
+
+        {!parsedMeal ? (
+          <button
+            onClick={handleAskAI}
+            disabled={isProcessing}
+            className="w-full py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
+            style={{ backgroundColor: '#1C7C54' }}
+          >
+            {isProcessing ? (
+              <>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                >
+                  <Sparkles className="w-5 h-5" />
+                </motion.div>
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <MessageSquare className="w-5 h-5" />
+                Ask Food AI
+              </>
+            )}
+          </button>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+              <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>
+                🤖 <strong>AI Parsed {parsedMeal.items.length} Items:</strong>
+              </p>
+              <ul className="space-y-2 text-sm" style={{ color: '#102A43' }}>
+                {parsedMeal.items.map((item: any, idx: number) => (
+                  <li key={idx} className="flex justify-between">
+                    <span>
+                      {item.name} ({item.portion})
+                    </span>
+                    <span className="opacity-70">{item.calories} kcal</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setParsedMeal(null);
+                  setUserInput('');
+                }}
+                className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+                style={{ borderColor: '#A8E6CF', color: '#102A43' }}
+              >
+                Try Again
+              </button>
+              <button
+                onClick={handleUseItems}
+                className="flex-1 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#1C7C54' }}
+              >
+                <Check className="w-5 h-5" />
+                Use These Items
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
