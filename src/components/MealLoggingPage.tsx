@@ -11,6 +11,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { addMealToDailyNutrition, getTodayMeals } from '../userService';
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
+import { BarcodeScannerCamera } from './BarcodeScannerCamera';
+import { fetchProductByBarcode } from '../services/barcodeScannerService';
 
 interface FoodItem {
   id: string;
@@ -958,25 +960,62 @@ function FoodItemCard({
 // Barcode Scan Tab
 function BarcodeScanTab({ onFoodDetected }: any) {
   const [isScanning, setIsScanning] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const [scannedData, setScannedData] = useState<any>(null);
 
   const handleStartScan = () => {
     setIsScanning(true);
-    // Simulate barcode scan
-    setTimeout(() => {
-      const mockData = {
-        name: 'Optimum Nutrition Gold Standard Whey',
-        servingSize: '1 scoop (30g)',
-        calories: 120,
-        protein: 24,
-        carbs: 3,
-        fat: 1,
-        fiber: 1,
-      };
-      setScannedData(mockData);
+    setScannedData(null);
+  };
+
+  const handleBarcodeDetected = async (barcode: string) => {
+    console.log('Barcode scanned:', barcode);
+    setIsScanning(false);
+    setIsFetching(true);
+
+    try {
+      const productData = await fetchProductByBarcode(barcode);
+
+      if (productData) {
+        // Convert to the expected format
+        const formattedData = {
+          name: productData.name,
+          brandName: productData.brandName,
+          servingSize: productData.servingSize,
+          amountConsumed: productData.amountConsumed,
+          baseCalories: productData.baseCalories,
+          baseProtein: productData.baseProtein,
+          baseCarbs: productData.baseCarbs,
+          baseFat: productData.baseFat,
+          baseFiber: productData.baseFiber,
+          calories: productData.calories,
+          protein: productData.protein,
+          carbs: productData.carbs,
+          fat: productData.fat,
+          fiber: productData.fiber,
+        };
+
+        setScannedData(formattedData);
+        toast.success(`✓ Found: ${productData.name}!`);
+      } else {
+        toast.error(`Product not found or missing nutrition data. Use manual entry.`, {
+          duration: 4000,
+          description: `Barcode: ${barcode}`,
+        });
+        setIsScanning(false);
+      }
+    } catch (error) {
+      console.error('Error fetching product:', error);
+      toast.error('Failed to fetch product data. Check your connection.');
       setIsScanning(false);
-      toast.success('Barcode scanned! Review and add to your meal.');
-    }, 2000);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  const handleCloseScan = () => {
+    setIsScanning(false);
+    setScannedData(null);
   };
 
   const handleAddItem = () => {
@@ -988,35 +1027,50 @@ function BarcodeScanTab({ onFoodDetected }: any) {
   };
 
   return (
-    <div className="bg-white rounded-xl p-8 shadow-sm">
-      {!scannedData ? (
-        <div className="text-center">
-          <div
-            className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center"
-            style={{ backgroundColor: '#E8F4F2' }}
-          >
-            {isScanning ? (
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-              >
-                <Sparkles className="w-12 h-12" style={{ color: '#1C7C54' }} />
-              </motion.div>
-            ) : (
-              <Barcode className="w-12 h-12" style={{ color: '#1C7C54' }} />
-            )}
+    <>
+      {/* Barcode Scanner Camera Overlay */}
+      <BarcodeScannerCamera
+        isActive={isScanning}
+        onBarcodeDetected={handleBarcodeDetected}
+        onClose={handleCloseScan}
+      />
+
+      {/* Main Content */}
+      <div className="bg-white rounded-xl p-8 shadow-sm">
+        {isFetching ? (
+          // Fetching State
+          <div className="text-center py-12">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+              className="w-16 h-16 mx-auto mb-4"
+            >
+              <Sparkles className="w-16 h-16" style={{ color: '#1C7C54' }} />
+            </motion.div>
+            <h3 className="mb-2" style={{ color: '#102A43' }}>
+              Fetching Product Info...
+            </h3>
+            <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+              Looking up nutrition data from our database
+            </p>
           </div>
+        ) : !scannedData ? (
+          // Start Scan State
+          <div className="text-center">
+            <div
+              className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center"
+              style={{ backgroundColor: '#E8F4F2' }}
+            >
+              <Barcode className="w-12 h-12" style={{ color: '#1C7C54' }} />
+            </div>
 
-          <h3 className="mb-2" style={{ color: '#102A43' }}>
-            {isScanning ? 'Scanning Barcode...' : 'Scan Product Barcode'}
-          </h3>
-          <p className="mb-6 text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-            {isScanning
-              ? 'Hold steady and keep the barcode in frame'
-              : 'Point your camera at the barcode on the package'}
-          </p>
+            <h3 className="mb-2" style={{ color: '#102A43' }}>
+              Scan Product Barcode
+            </h3>
+            <p className="mb-6 text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+              Point your camera at the barcode on the package
+            </p>
 
-          {!isScanning && (
             <button
               onClick={handleStartScan}
               className="px-8 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2 mx-auto"
@@ -1025,100 +1079,112 @@ function BarcodeScanTab({ onFoodDetected }: any) {
               <Camera className="w-5 h-5" />
               Start Scanning
             </button>
-          )}
 
-          <div className="mt-8 p-4 rounded-lg text-left" style={{ backgroundColor: '#E8F4F2' }}>
-            <p className="text-sm mb-2" style={{ color: '#102A43' }}>
-              <strong>📱 Tips for scanning:</strong>
-            </p>
-            <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
-              <li>• Make sure barcode is well-lit and in focus</li>
-              <li>• Hold camera 4-6 inches from the barcode</li>
-              <li>• Works with UPC, EAN, and QR codes</li>
-            </ul>
+            <div className="mt-8 p-4 rounded-lg text-left" style={{ backgroundColor: '#E8F4F2' }}>
+              <p className="text-sm mb-2" style={{ color: '#102A43' }}>
+                <strong>📱 Tips for better scanning:</strong>
+              </p>
+              <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
+                <li>• Hold camera steady 4-8 inches from barcode</li>
+                <li>• Ensure good lighting (avoid shadows/glare)</li>
+                <li>• Keep barcode flat and fully visible</li>
+                <li>• Try different angles if not detecting</li>
+                <li>• Works best with UPC & EAN barcodes</li>
+                <li>• Database: 1.3M+ products with nutrition data</li>
+              </ul>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
-            <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>
-              ✅ <strong>Product Found:</strong>
-            </p>
-            <div className="space-y-2">
-              <div>
-                <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
-                  Product Name:
-                </p>
-                <p style={{ color: '#102A43' }}>{scannedData.name}</p>
-              </div>
-              <div>
-                <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
-                  Serving Size:
-                </p>
-                <p style={{ color: '#102A43' }}>{scannedData.servingSize}</p>
-              </div>
-              <div className="h-px" style={{ backgroundColor: '#A8E6CF' }}></div>
-              <div className="flex justify-between">
-                <span style={{ color: '#102A43' }}>Calories:</span>
-                <strong style={{ color: '#102A43' }}>{scannedData.calories} kcal</strong>
-              </div>
-              <div className="grid grid-cols-4 gap-2 pt-2">
-                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
-                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
-                    Protein
+        ) : (
+          // Product Found State
+          <div className="space-y-6">
+            <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
+              <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>
+                ✅ <strong>Product Found:</strong>
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
+                    Product Name:
                   </p>
-                  <p className="text-sm" style={{ color: '#F5A623' }}>
-                    {scannedData.protein}g
-                  </p>
+                  <p style={{ color: '#102A43' }}>{scannedData.name}</p>
                 </div>
-                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
-                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
-                    Carbs
+                {scannedData.brandName && (
+                  <div>
+                    <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
+                      Brand:
+                    </p>
+                    <p style={{ color: '#102A43' }}>{scannedData.brandName}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm mb-1" style={{ color: '#102A43', opacity: 0.7 }}>
+                    Serving Size:
                   </p>
-                  <p className="text-sm" style={{ color: '#4DD4AC' }}>
-                    {scannedData.carbs}g
-                  </p>
+                  <p style={{ color: '#102A43' }}>{scannedData.servingSize}</p>
                 </div>
-                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
-                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
-                    Fat
-                  </p>
-                  <p className="text-sm" style={{ color: '#6B47DC' }}>
-                    {scannedData.fat}g
-                  </p>
+                <div className="h-px" style={{ backgroundColor: '#A8E6CF' }}></div>
+                <div className="flex justify-between">
+                  <span style={{ color: '#102A43' }}>Calories:</span>
+                  <strong style={{ color: '#102A43' }}>{scannedData.calories} kcal</strong>
                 </div>
-                <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
-                  <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
-                    Fiber
-                  </p>
-                  <p className="text-sm" style={{ color: '#1C7C54' }}>
-                    {scannedData.fiber}g
-                  </p>
+                <div className="grid grid-cols-4 gap-2 pt-2">
+                  <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                    <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                      Protein
+                    </p>
+                    <p className="text-sm" style={{ color: '#F5A623' }}>
+                      {scannedData.protein}g
+                    </p>
+                  </div>
+                  <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                    <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                      Carbs
+                    </p>
+                    <p className="text-sm" style={{ color: '#4DD4AC' }}>
+                      {scannedData.carbs}g
+                    </p>
+                  </div>
+                  <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                    <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                      Fat
+                    </p>
+                    <p className="text-sm" style={{ color: '#6B47DC' }}>
+                      {scannedData.fat}g
+                    </p>
+                  </div>
+                  <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
+                    <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                      Fiber
+                    </p>
+                    <p className="text-sm" style={{ color: '#1C7C54' }}>
+                      {scannedData.fiber}g
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => setScannedData(null)}
-              className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
-              style={{ borderColor: '#A8E6CF', color: '#102A43' }}
-            >
-              Scan Another
-            </button>
-            <button
-              onClick={handleAddItem}
-              className="flex-1 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#1C7C54' }}
-            >
-              <Plus className="w-5 h-5" />
-              Add to Meal
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setScannedData(null)}
+                className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+                style={{ borderColor: '#A8E6CF', color: '#102A43' }}
+              >
+                Scan Another
+              </button>
+              <button
+                onClick={handleAddItem}
+                className="flex-1 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#1C7C54' }}
+              >
+                <Plus className="w-5 h-5" />
+                Add to Meal
+              </button>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 }
 
