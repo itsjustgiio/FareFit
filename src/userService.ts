@@ -153,6 +153,20 @@ export const updateFitnessGoals = async (
     }
 }
 
+// Sanitize meal data to ensure all numeric fields are valid numbers
+function sanitizeMealData(meal: any) {
+  const clean = { ...meal };
+  ['calories', 'protein', 'carbs', 'fats', 'fiber', 'serving_size'].forEach((key) => {
+    const value = clean[key];
+    if (value === '' || isNaN(value) || value === undefined || value === null) {
+      clean[key] = 0;
+    } else {
+      clean[key] = Number(value);
+    }
+  });
+  return clean;
+}
+
 export const addMealToDailyNutrition = async (
   userId: string,
   meal: {
@@ -168,6 +182,13 @@ export const addMealToDailyNutrition = async (
   }
 ) => {
   try {
+    // Sanitize the meal data before saving
+    const sanitizedMeal = sanitizeMealData(meal);
+    
+    // Debug logging to see what we're actually saving
+    console.log("🧩 Original meal data:", JSON.stringify(meal, null, 2));
+    console.log("🧩 Sanitized meal data being saved:", JSON.stringify(sanitizedMeal, null, 2));
+    
     const today = getTodayEST();
     const docRef = doc(db, "Daily_Nutrition_Summary", userId);
     const docSnap = await getDoc(docRef);
@@ -183,7 +204,7 @@ export const addMealToDailyNutrition = async (
       }
     }
 
-    meals.push({ ...meal, meal_date: today });
+    meals.push({ ...sanitizedMeal, meal_date: today });
     await updateDoc(docRef, { todays_meals: meals });
     console.log("✅ Meal added successfully!");
   } catch (err) {
@@ -199,7 +220,20 @@ export const getTodayMeals = async (userId: string) => {
     if (!docSnap.exists()) return [];
 
     const meals = docSnap.data()?.todays_meals || [];
-    return meals.filter((meal: any) => meal.meal_date === today);
+    const todaysMeals = meals.filter((meal: any) => meal.meal_date === today);
+    
+    // Sanitize any existing bad data when loading
+    const safeMeals = todaysMeals.map((meal: any) => ({
+      ...meal,
+      calories: Number(meal.calories) || 0,
+      protein: Number(meal.protein) || 0,
+      carbs: Number(meal.carbs) || 0,
+      fats: Number(meal.fats) || 0,
+      fiber: Number(meal.fiber) || 0,
+      serving_size: Number(meal.serving_size) || 1,
+    }));
+    
+    return safeMeals;
 };
 
 const getTodayEST = (): string => {

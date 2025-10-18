@@ -1,3 +1,5 @@
+import { useUserMeals } from "../hooks/useUserMeals";
+
 interface CaloriesCardProps {
   onFoodAIClick?: () => void;
   onLogMealClick?: () => void;
@@ -19,19 +21,37 @@ interface CaloriesCardProps {
 }
 
 export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, loggedMacros }: CaloriesCardProps) {
+  // Use enhanced real-time data from Firestore
+  const { meals, loading, totals } = useUserMeals();
+
+  // Loading state
+  if (loading) {
+    return (
+      <div 
+        className="rounded-lg p-6 sm:p-8 transition-colors duration-300"
+        style={{
+          background: 'linear-gradient(135deg, var(--farefit-primary) 0%, var(--farefit-secondary) 100%)'
+        }}
+      >
+        <h3 className="text-white mb-2">CALORIES CONSUMED</h3>
+        <p className="text-center text-white opacity-70">Loading meals...</p>
+      </div>
+    );
+  }
+
   // Check if there's any logged data
-  const hasData = loggedMacros && loggedMacros.calories > 0;
+  const hasData = meals.length > 0;
   
-  // Use real data if available, otherwise show zeros
-  const displayCalories = loggedMacros?.calories || 0;
+  // Use calculated totals from hook
+  const displayCalories = totals.calories;
   const targetCalories = userGoal?.targetCalories || 2200;
-  const displayProtein = loggedMacros?.protein || 0;
+  const displayProtein = totals.protein;
   const targetProtein = userGoal?.protein || 165;
-  const displayCarbs = loggedMacros?.carbs || 0;
+  const displayCarbs = totals.carbs;
   const targetCarbs = userGoal?.carbs || 220;
-  const displayFat = loggedMacros?.fat || 0;
+  const displayFat = totals.fat;
   const targetFat = userGoal?.fat || 73;
-  const displayFiber = loggedMacros?.fiber || 0;
+  const displayFiber = totals.fiber;
   const targetFiber = userGoal?.fiber || 30;
 
   return (

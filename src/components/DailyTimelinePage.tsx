@@ -5,6 +5,7 @@ import { Footer } from './Footer';
 import { MealDetailModal } from './MealDetailModal';
 import { FitnessScoreModal } from './FitnessScoreModal';
 import { motion } from 'motion/react';
+import { useUserMeals } from '../hooks/useUserMeals';
 
 interface DailyTimelinePageProps {
   onBack: () => void;
@@ -56,90 +57,81 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
   const [selectedMeal, setSelectedMeal] = useState<MealEntry | null>(null);
   const [isFitnessScoreOpen, setIsFitnessScoreOpen] = useState(false);
 
-  // Mock data - will come from backend
-  const timelineEntries: MealEntry[] = [
-    {
-      id: '1',
-      type: 'meal',
-      name: 'Breakfast',
-      calories: 280,
-      time: '8:30 AM',
-      timestamp: new Date(2025, 9, 17, 8, 30),
-      status: 'CONSUMED',
-      foods: [
-        { name: 'Oatmeal with berries', calories: 150, protein: 5, carbs: 27, fat: 3, serving: '1 cup' },
-        { name: 'Greek Yogurt', calories: 100, protein: 17, carbs: 6, fat: 0, serving: '170g' },
-        { name: 'Banana', calories: 30, protein: 0, carbs: 7, fat: 0, serving: '1 small' }
-      ]
-    },
-    {
-      id: '2',
-      type: 'meal',
-      name: 'Morning Snack',
-      calories: 90,
-      time: '10:45 AM',
-      timestamp: new Date(2025, 9, 17, 10, 45),
-      status: 'CONSUMED',
-      foods: [
-        { name: 'Protein Bar', calories: 90, protein: 10, carbs: 9, fat: 2, serving: '1 bar' }
-      ]
-    },
-    {
-      id: '3',
-      type: 'meal',
-      name: 'Lunch',
-      calories: 650,
-      time: '1:15 PM',
-      timestamp: new Date(2025, 9, 17, 13, 15),
-      status: 'CONSUMED',
-      foods: [
-        { name: 'Grilled Chicken Breast', calories: 250, protein: 46, carbs: 0, fat: 6, serving: '200g' },
-        { name: 'Brown Rice', calories: 215, protein: 5, carbs: 45, fat: 2, serving: '1 cup' },
-        { name: 'Mixed Vegetables', calories: 85, protein: 3, carbs: 17, fat: 0, serving: '1.5 cups' },
-        { name: 'Olive Oil Dressing', calories: 100, protein: 0, carbs: 0, fat: 11, serving: '1 tbsp' }
-      ]
-    },
-    {
-      id: '4',
-      type: 'meal',
-      name: 'Pre-Workout Snack',
-      calories: 300,
-      time: '5:30 PM',
-      timestamp: new Date(2025, 9, 17, 17, 30),
-      status: 'CONSUMED',
-      foods: [
-        { name: 'Apple', calories: 95, protein: 0, carbs: 25, fat: 0, serving: '1 medium' },
-        { name: 'Almond Butter', calories: 205, protein: 7, carbs: 6, fat: 18, serving: '2 tbsp' }
-      ]
-    },
-    {
-      id: '5',
-      type: 'workout',
-      name: 'Push Day',
-      calories: -517,
-      time: '6:15 PM',
-      timestamp: new Date(2025, 9, 17, 18, 15),
-      status: 'WORKOUT',
-      exercises: [
-        { name: 'Bench Press', sets: 4, reps: 8 },
-        { name: 'Incline DB Press', sets: 3, reps: 10 },
-        { name: 'Lateral Raises', sets: 3, reps: 12 },
-        { name: 'Tricep Pushdowns', sets: 3, reps: 15 }
-      ]
-    },
-    {
-      id: '6',
-      type: 'meal',
-      name: 'Dinner',
-      calories: 130,
-      time: '7:45 PM',
-      timestamp: new Date(2025, 9, 17, 19, 45),
-      status: 'CONSUMED',
-      foods: [
-        { name: 'Protein Shake', calories: 130, protein: 24, carbs: 3, fat: 2, serving: '1 scoop + water' }
-      ]
+  // Get real meal data from Firestore for selected date
+  const { meals, totals, loading } = useUserMeals(selectedDate);
+
+  // Loading state while fetching meal data
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#E8F4F2' }}>
+        <div className="text-center">
+          <div className="mb-4 text-2xl" style={{ color: '#1C7C54' }}>🍽️</div>
+          <p style={{ color: '#1C7C54' }}>Loading your timeline...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Group meals by meal_type to combine foods into single entries
+  const groupedMeals = meals.reduce((groups, meal) => {
+    const mealType = meal.meal_type || 'meal';
+    if (!groups[mealType]) {
+      groups[mealType] = {
+        meal_type: mealType,
+        total_calories: 0,
+        foods: [],
+      };
     }
-  ];
+    
+    groups[mealType].total_calories += meal.calories || 0;
+    groups[mealType].foods.push({
+      name: meal.food_name || 'Unknown food',
+      calories: meal.calories || 0,
+      protein: meal.protein || 0,
+      carbs: meal.carbs || 0,
+      fat: meal.fats || 0,
+      serving: meal.serving_size?.toString() || '1',
+    });
+    
+    return groups;
+  }, {} as Record<string, { meal_type: string; total_calories: number; foods: any[] }>);
+
+  // Convert grouped meals to timeline format
+  const mealEntries: MealEntry[] = Object.values(groupedMeals).map((group, index) => ({
+    id: `meal-group-${group.meal_type}-${index}`,
+    type: 'meal' as const,
+    name: group.meal_type.toLowerCase().replace(/^\w/, c => c.toUpperCase()),
+    calories: group.total_calories,
+    time: '—', // Will be enhanced in Phase 2 when meal_time is properly stored
+    timestamp: new Date(), // Default to now until proper timestamps are available
+    status: 'CONSUMED',
+    foods: group.foods,
+  }));
+
+  // Check if we should show workout for selected date (only show for today for now)
+  const isToday = selectedDate.toDateString() === new Date().toDateString();
+  
+  // Merge real meals with static workout data  
+  const workoutEntry = isToday ? [{
+    id: 'workout-1',
+    type: 'workout' as const,
+    name: 'Push Day',
+    calories: -517,
+    time: '6:15 PM',
+    timestamp: new Date(2025, 9, 17, 18, 15),
+    status: 'WORKOUT',
+    exercises: [
+      { name: 'Bench Press', sets: 4, reps: 8 },
+      { name: 'Incline DB Press', sets: 3, reps: 10 },
+      { name: 'Lateral Raises', sets: 3, reps: 12 },
+      { name: 'Tricep Pushdowns', sets: 3, reps: 15 },
+    ],
+  }] : [];
+
+  const timelineEntries: MealEntry[] = [
+    ...mealEntries,
+    ...workoutEntry,
+  ].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   // Calculate cumulative data for chart
   const cumulativeData = timelineEntries.reduce((acc, entry, index) => {
@@ -164,18 +156,18 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
     return acc;
   }, [] as { time: string; calories: number; burned: number; net: number }[]);
 
-  // Calculate totals
-  const totalConsumed = loggedMacros?.calories || 1450;
-  const totalBurned = 517;
+  // Calculate totals using real data
+  const totalConsumed = totals.calories || 0;
+  const totalBurned = 517; // Still static until workout logging is added
   const netCalories = totalConsumed - totalBurned;
   const targetCalories = userGoal?.targetCalories || 2200;
   const remainingCalories = targetCalories - netCalories;
 
-  // Calculate macro percentages
-  const proteinConsumed = loggedMacros?.protein || 95;
-  const carbsConsumed = loggedMacros?.carbs || 140;
-  const fatConsumed = loggedMacros?.fat || 48;
-  const fiberConsumed = loggedMacros?.fiber || 18;
+  // Calculate macro percentages using real data
+  const proteinConsumed = totals.protein || 0;
+  const carbsConsumed = totals.carbs || 0;
+  const fatConsumed = totals.fat || 0;
+  const fiberConsumed = totals.fiber || 0;
 
   const proteinTarget = userGoal?.protein || 165;
   const carbsTarget = userGoal?.carbs || 220;
@@ -200,7 +192,6 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
     setSelectedDate(newDate);
   };
 
-  const isToday = selectedDate.toDateString() === new Date().toDateString();
   const isFuture = selectedDate > new Date();
 
   const formatDate = (date: Date) => {
@@ -520,7 +511,28 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
               <h3 className="mb-4" style={{ color: '#102A43' }}>Daily Timeline</h3>
               
               <div className="space-y-4">
-                {timelineEntries.map((entry, index) => (
+                {timelineEntries.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="mb-4 text-4xl">📅</div>
+                    <p className="mb-2" style={{ color: '#102A43' }}>
+                      No meals logged for {formatDate(selectedDate)}
+                    </p>
+                    {isToday ? (
+                      <button
+                        onClick={onBack}
+                        className="mt-4 px-6 py-3 rounded-lg text-white transition-all hover:opacity-90"
+                        style={{ backgroundColor: '#1C7C54' }}
+                      >
+                        Go to Dashboard to Log Meal
+                      </button>
+                    ) : (
+                      <p className="text-sm" style={{ color: '#102A43', opacity: 0.7 }}>
+                        This day had no activity
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  timelineEntries.map((entry, index) => (
                   <motion.div
                     key={entry.id}
                     initial={{ opacity: 0, x: -20 }}
@@ -580,7 +592,8 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                       )}
                     </div>
                   </motion.div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 

@@ -27,6 +27,7 @@ import { WelcomeBanner } from './components/WelcomeBanner';
 import { MealLoggingPage } from './components/MealLoggingPage';
 import { AccountPage } from './components/AccountPage';
 import { ScoreCards } from './components/ScoreCards';
+import DevToolsPage from './components/DevToolsPage';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
 import { logInUser, logInWithGoogle, signupUser, createUserRecords} from './userService';
 import { log } from 'node:util';
@@ -67,7 +68,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authView, setAuthView] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'app'>('landing');
 
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai' | 'food-assistant' | 'workout-detail' | 'daily-timeline' | 'meal-logging' | 'account'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai' | 'food-assistant' | 'workout-detail' | 'daily-timeline' | 'meal-logging' | 'account' | 'dev-tools'>('dashboard');
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isFitnessScoreOpen, setIsFitnessScoreOpen] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
@@ -717,6 +718,27 @@ export default function App() {
     );
   }
 
+  // Dev tools page (development only)
+  if (currentPage === 'dev-tools' && import.meta.env.DEV) {
+    return (
+      <div className="min-h-screen" style={{ backgroundColor: 'var(--farefit-bg)' }}>
+        <Header 
+          userName={user?.name} 
+          onLogout={handleLogout}
+          onAccountClick={() => setCurrentPage('account')}
+          isDarkMode={isDarkMode}
+        />
+        <DevToolsPage />
+        <button 
+          onClick={() => setCurrentPage('dashboard')}
+          className="fixed bottom-4 left-4 bg-blue-500 text-white px-4 py-2 rounded"
+        >
+          ← Back to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--farefit-bg)' }}>
       <Header 
@@ -773,7 +795,6 @@ export default function App() {
             onFoodAIClick={() => setCurrentPage('food-assistant')}
             onLogMealClick={() => setCurrentPage('meal-logging')}
             userGoal={userGoal}
-            loggedMacros={loggedMacros}
           />
           <MealsCard 
             onViewTimeline={() => setCurrentPage('daily-timeline')}
@@ -799,6 +820,18 @@ export default function App() {
           userGoal={userGoal}
         />
       </div>
+      
+      {/* Dev Tools Button (development only) */}
+      {import.meta.env.DEV && (
+        <div className="px-4 py-2">
+          <button 
+            onClick={() => setCurrentPage('dev-tools')}
+            className="w-full bg-orange-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-orange-600 transition-colors"
+          >
+            🛠️ Dev Tools (Check Meals)
+          </button>
+        </div>
+      )}
       
       <Footer 
         onNavigate={setCurrentPage}

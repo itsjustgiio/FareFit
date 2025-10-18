@@ -227,17 +227,23 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       });
       */
      for (const item of meal.items) {
-      await addMealToDailyNutrition(user.uid, {
+      // Ensure all numeric values are valid before saving
+      const mealData = {
         meal_type: meal.mealType,
         food_name: item.name,
-        serving_size: item.amountConsumed || 1,
-        calories: item.calories,
-        protein: item.protein,
-        carbs: item.carbs,
-        fats: item.fat,
-        fiber: item.fiber,
-        brand: item.brandName,
-      });
+        serving_size: Number(item.amountConsumed) || 1,
+        calories: Number(item.calories) || 0,
+        protein: Number(item.protein) || 0,
+        carbs: Number(item.carbs) || 0,
+        fats: Number(item.fat) || 0,
+        fiber: Number(item.fiber) || 0,
+        brand: item.brandName || '',
+      };
+      
+      // Debug: Log what we're about to save
+      console.log("🍽️ Preparing to save meal:", mealData);
+      
+      await addMealToDailyNutrition(user.uid, mealData);
     }
 
       // 🔹 Update local app state/UI
@@ -826,9 +832,18 @@ function FoodItemCard({
                     type="number"
                     step="0.1"
                     min="0"
-                    placeholder="1.0"
-                    value={item.amountConsumed || ''}
-                    onChange={(e) => onUpdate(item.id, { amountConsumed: parseFloat(e.target.value) || 1 })}
+                    plxaceholder="1.0"
+                    value={item.amountConsumed.toString()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const numValue = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
+                      onUpdate(item.id, { amountConsumed: numValue });
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value === '') {
+                        onUpdate(item.id, { amountConsumed: 1 });
+                      }
+                    }}
                     className="mt-1.5"
                   />
                   <p className="text-xs mt-1" style={{ color: '#102A43', opacity: 0.5 }}>
@@ -848,11 +863,12 @@ function FoodItemCard({
                     <Input
                       type="number"
                       step="1"
-                      placeholder="120"
-                      value={item.baseCalories === 0 ? '' : item.baseCalories.toString()}
+                      min="0"
+                      placeholder="0"
+                      value={item.baseCalories.toString()}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        const numValue = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
                         onUpdate(item.id, { baseCalories: numValue });
                       }}
                       onBlur={(e) => {
@@ -868,11 +884,12 @@ function FoodItemCard({
                     <Input
                       type="number"
                       step="0.1"
-                      placeholder="24"
-                      value={item.baseProtein === 0 ? '' : item.baseProtein.toString()}
+                      min="0"
+                      placeholder="0"
+                      value={item.baseProtein.toString()}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        const numValue = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
                         onUpdate(item.id, { baseProtein: numValue });
                       }}
                       onBlur={(e) => {
@@ -888,11 +905,12 @@ function FoodItemCard({
                     <Input
                       type="number"
                       step="0.1"
-                      placeholder="3"
-                      value={item.baseCarbs === 0 ? '' : item.baseCarbs.toString()}
+                      min="0"
+                      placeholder="0"
+                      value={item.baseCarbs.toString()}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        const numValue = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
                         onUpdate(item.id, { baseCarbs: numValue });
                       }}
                       onBlur={(e) => {
@@ -908,11 +926,12 @@ function FoodItemCard({
                     <Input
                       type="number"
                       step="0.1"
-                      placeholder="1"
-                      value={item.baseFat === 0 ? '' : item.baseFat.toString()}
+                      min="0"
+                      placeholder="0"
+                      value={item.baseFat.toString()}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        const numValue = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
                         onUpdate(item.id, { baseFat: numValue });
                       }}
                       onBlur={(e) => {
@@ -928,11 +947,12 @@ function FoodItemCard({
                     <Input
                       type="number"
                       step="0.1"
-                      placeholder="1"
-                      value={item.baseFiber === 0 ? '' : item.baseFiber.toString()}
+                      min="0"
+                      placeholder="0"
+                      value={item.baseFiber.toString()}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        const numValue = val === '' ? 0 : Math.max(0, parseFloat(val) || 0);
                         onUpdate(item.id, { baseFiber: numValue });
                       }}
                       onBlur={(e) => {

@@ -1,0 +1,8 @@
+{
+  "name": "view-meals-cli",
+  "type": "module",
+  "main": "viewTodaysMeals.js",
+  "dependencies": {
+    "firebase": "^10.0.0"
+  }
+}
