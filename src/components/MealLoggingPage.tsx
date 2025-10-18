@@ -214,6 +214,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         toast.error("User not logged in");
         return;
       }
+      if (!userId) {return;}
 
       console.log('🔑 Current User ID:', user.uid);
       console.log('📍 Firebase path: Daily_Nutrition_Summary/' + user.uid);
