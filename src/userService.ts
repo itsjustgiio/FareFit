@@ -1,6 +1,20 @@
 import { db } from "./firebase";
-import { doc, setDoc, collection, Timestamp, updateDoc} from "firebase/firestore";
+import { doc, setDoc, getDoc, Timestamp, updateDoc} from "firebase/firestore";
 import { getAuth, createUserWithEmailAndPassword, updateProfile} from "firebase/auth";
+
+interface Meal {
+  meal_date: string;
+  meal_type: string;
+  food_name: string;
+  serving_size: number;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  fiber: number;
+}
+
+let meals: Meal[] = [];
 
 export const signupUser = async (email: string, password: string, name: string) => {
   const auth = getAuth();
@@ -52,6 +66,21 @@ export async function createUserRecords(userId: string, name: string, email: str
       is_active: true,
     });
 
+    await setDoc(doc(db, "Daily_Nutrition_Summary", userId), {
+        todays_meals: [{
+            meal_date: null,
+            meal_type: null,
+            food_name: null,
+            brand: null,
+            serving_size: 0,
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fats: 0,
+            fiber: 0
+        }]
+    });
+
     console.log("Default user records created successfully!");
   } catch (err) {
     console.error("Error creating user records:", err);
@@ -75,3 +104,60 @@ export const updateFitnessGoals = async (
         throw error;
     }
 }
+
+export const addMealToDailyNutrition = async (
+  userId: string,
+  meal: {
+    meal_type: string;
+    food_name: string;
+    brand: string;
+    serving_size: number;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    fiber: number;
+  }
+) => {
+  try {
+    const today = getTodayEST();
+    const docRef = doc(db, "Daily_Nutrition_Summary", userId);
+    const docSnap = await getDoc(docRef);
+
+    // Explicitly type the array
+    let meals: Meal[] = [];
+
+    if (docSnap.exists()) {
+      meals = (docSnap.data()?.todays_meals as Meal[]) || [];
+      const lastMealDate = meals.length ? meals[meals.length - 1].meal_date : null;
+      if (lastMealDate !== today) {
+        meals = []; // reset for new day
+      }
+    }
+
+    meals.push({ ...meal, meal_date: today });
+    await updateDoc(docRef, { todays_meals: meals });
+    console.log("✅ Meal added successfully!");
+  } catch (err) {
+    console.error("❌ Error adding meal:", err);
+  }
+};
+
+export const getTodayMeals = async (userId: string) => {
+    const docRef = doc(db, "Daily_Nutrition_Summary", userId);
+    const docSnap = await getDoc(docRef);
+    const today = getTodayEST();
+
+    if (!docSnap.exists()) return [];
+
+    const meals = docSnap.data()?.todays_meals || [];
+    return meals.filter((meal: any) => meal.meal_date === today);
+};
+
+const getTodayEST = (): string => {
+  const estOffset = -5 * 60; // EST offset in minutes
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const estDate = new Date(utc + estOffset * 60000);
+  return estDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
+};

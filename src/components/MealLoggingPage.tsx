@@ -6,8 +6,11 @@ import { Label } from './ui/label';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { addMealToDailyNutrition, getTodayMeals } from '../userService';
+import { getAuth } from 'firebase/auth';
+import { useEffect } from "react";
 
 interface FoodItem {
   id: string;
@@ -25,6 +28,8 @@ interface FoodItem {
   fat: number;                   // Calculated
   fiber: number;                 // Calculated
   isExpanded: boolean;
+  isFavorite?: boolean;
+  brandName: string;
 }
 
 interface MealLoggingPageProps {
@@ -54,6 +59,8 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       fat: 0,
       fiber: 0,
       isExpanded: true,
+      isFavorite: false,
+      brandName: ''
     },
   ]);
   
@@ -143,23 +150,50 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
     );
   };
 
-  const handleSaveMeal = () => {
+  const handleSaveMeal = async () => {
     // Validate
     const hasValidItems = foodItems.some((item) => item.name && item.calories > 0);
     if (!hasValidItems) {
-      toast.error('Please add at least one food item with a name and calories');
+      toast.error("Please add at least one food item with a name and calories");
       return;
     }
 
     const finalMealName = usePredefinedMeal
       ? predefinedMeal.charAt(0).toUpperCase() + predefinedMeal.slice(1)
-      : mealName || 'Custom Meal';
+      : mealName || "Custom Meal";
+
+      /*
+    const meal = {
+      id: Date.now().toString(),
+      name: finalMealName,
+      mealType: usePredefinedMeal ? predefinedMeal : "snack",
+      items: foodItems.filter((item) => item.name && item.calories > 0),
+      calories: totals.calories,
+      protein: totals.protein,
+      carbs: totals.carbs,
+      fat: totals.fat,
+      fiber: totals.fiber,
+      timestamp: new Date(),
+      brandName: foodItems.filter((item) => item.brandName ),
+    }; */
 
     const meal = {
       id: Date.now().toString(),
       name: finalMealName,
-      mealType: usePredefinedMeal ? predefinedMeal : 'snack',
-      items: foodItems.filter((item) => item.name && item.calories > 0),
+      mealType: usePredefinedMeal ? predefinedMeal : "snack",
+      items: foodItems
+        .filter((item) => item.name && item.calories > 0)
+        .map((item) => ({
+          name: item.name,
+          calories: item.calories,
+          protein: item.protein,
+          carbs: item.carbs,
+          fat: item.fat,
+          fiber: item.fiber,
+          servingSize: item.servingSize,
+          amountConsumed: item.amountConsumed,
+          brandName: item.brandName || "", // optional brand
+        })),
       calories: totals.calories,
       protein: totals.protein,
       carbs: totals.carbs,
@@ -168,9 +202,54 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       timestamp: new Date(),
     };
 
-    onMealLogged(meal);
-    toast.success(`✅ ${finalMealName} logged successfully! ${totals.calories} kcal added.`);
-    onBack();
+
+    try {
+      // 🔹 Save to Firestore
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (!user) {
+        toast.error("User not logged in");
+        return;
+      }
+      
+      /*
+      await addMealToDailyNutrition(user.uid, {
+        meal_type: meal.mealType,
+        food_name: meal.name,
+        serving_size: 1, // or however you calculate it
+        calories: meal.calories,
+        protein: meal.protein,
+        carbs: meal.carbs,
+        fats: meal.fat,
+        fiber: meal.fiber,
+        brand: meal.brandName
+      });
+      */
+     for (const item of meal.items) {
+      await addMealToDailyNutrition(user.uid, {
+        meal_type: meal.mealType,
+        food_name: item.name,
+        serving_size: item.amountConsumed || 1,
+        calories: item.calories,
+        protein: item.protein,
+        carbs: item.carbs,
+        fats: item.fat,
+        fiber: item.fiber,
+        brand: item.brandName,
+      });
+    }
+
+      // 🔹 Update local app state/UI
+      onMealLogged(meal);
+      toast.success(
+        `✅ ${finalMealName} logged successfully! ${totals.calories} kcal added.`
+      );
+      onBack();
+    } catch (err) {
+      console.error("❌ Error saving meal:", err);
+      toast.error("Error saving meal to Firestore");
+    }
   };
 
   return (
@@ -332,6 +411,47 @@ function ManualEntryTab({
 }: any) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
+  const [todayTotals, setTodayTotals] = useState({
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fats: 0,
+    fiber: 0,
+    food_name: ""
+  });
+
+  useEffect(() => {
+    const fetchTodayMeals = async () => {
+      try {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const todayMeals = await getTodayMeals(user.uid);
+
+        if (todayMeals && todayMeals.length > 0) {
+          const total = todayMeals.reduce(
+            (acc, meal) => ({
+              calories: acc.calories + (meal.calories || 0),
+              protein: acc.protein + (meal.protein || 0),
+              carbs: acc.carbs + (meal.carbs || 0),
+              fats: acc.fats + (meal.fats || 0),
+              fiber: acc.fiber + (meal.fiber || 0),
+              food_name: acc.food_name
+            }),
+            { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 }
+          );
+
+          setTodayTotals(total);
+        }
+      } catch (error) {
+        console.error("Error fetching today’s meals:", error);
+      }
+    };
+
+    fetchTodayMeals();
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Meal Name Section */}
@@ -409,13 +529,13 @@ function ManualEntryTab({
         <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
           <div className="flex items-baseline justify-center gap-2 mb-4">
             <motion.span
-              key={totals.calories}
+              key={todayTotals.calories}
               initial={{ y: -10, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               className="text-3xl"
               style={{ color: '#1C7C54' }}
             >
-              {totals.calories}
+              {todayTotals.calories}
             </motion.span>
             <span className="text-lg" style={{ color: '#102A43', opacity: 0.7 }}>
               kcal
@@ -428,12 +548,12 @@ function ManualEntryTab({
                 Protein
               </p>
               <motion.p
-                key={totals.protein}
+                key={todayTotals.protein}
                 initial={{ y: -5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#F5A623' }}
               >
-                {totals.protein}g
+                {todayTotals.protein}g
               </motion.p>
             </div>
             <div className="text-center">
@@ -441,12 +561,12 @@ function ManualEntryTab({
                 Carbs
               </p>
               <motion.p
-                key={totals.carbs}
+                key={todayTotals.carbs}
                 initial={{ y: -5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#4DD4AC' }}
               >
-                {totals.carbs}g
+                {todayTotals.carbs}g
               </motion.p>
             </div>
             <div className="text-center">
@@ -454,12 +574,12 @@ function ManualEntryTab({
                 Fat
               </p>
               <motion.p
-                key={totals.fat}
+                key={todayTotals.fats}
                 initial={{ y: -5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#6B47DC' }}
               >
-                {totals.fat}g
+                {todayTotals.fats}g
               </motion.p>
             </div>
             <div className="text-center">
@@ -467,15 +587,16 @@ function ManualEntryTab({
                 Fiber
               </p>
               <motion.p
-                key={totals.fiber}
+                key={todayTotals.fiber}
                 initial={{ y: -5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#1C7C54' }}
               >
-                {totals.fiber}g
+                {todayTotals.fiber}g
               </motion.p>
             </div>
           </div>
+
         </div>
 
         <p className="text-xs text-center" style={{ color: '#102A43', opacity: 0.6 }}>
@@ -670,6 +791,21 @@ function FoodItemCard({
                 </div>
               </div>
 
+              {/* Optional brand name */}
+              <div>
+                <Label>Brand Name (optional)</Label>
+                <Input
+                  placeholder="e.g., Tyson, Nestle"
+                  value={item.brandName || ''}
+                  onChange={(e) => onUpdate(item.id, { brandName: e.target.value })}
+                  className="mt-1.5"
+                />
+                <p className="text-xs mt-1" style={{ color: '#102A43', opacity: 0.5 }}>
+                  You can leave this empty if not applicable
+                </p>
+              </div>
+
+
               {/* Serving Size and Amount Consumed */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -795,6 +931,22 @@ function FoodItemCard({
                   </div>
                 </div>
               )}
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation(); // prevent toggling expand
+                  onUpdate(item.id, { isFavorite: !item.isFavorite });
+                  toast.success(
+                    !item.isFavorite ? 'Added to favorites!' : 'Removed from favorites!'
+                  );
+                }}
+                className={`px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 ${
+                  item.isFavorite ? 'bg-yellow-300 text-yellow' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                {item.isFavorite ? '★ Favorite' : '☆ Favorite'}
+              </button>
+
             </div>
           </motion.div>
         )}
