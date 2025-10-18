@@ -153,10 +153,9 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
   };
 
   const handleSaveMeal = async () => {
-    // Validate
-    const hasValidItems = foodItems.some((item) => item.name && item.calories > 0);
+    const hasValidItems = foodItems.some((item) => item.name && item.name.trim().length > 0);
     if (!hasValidItems) {
-      toast.error("Please add at least one food item with a name and calories");
+      toast.error("Please add at least one food item with a name");
       return;
     }
 
@@ -184,7 +183,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       name: finalMealName,
       mealType: usePredefinedMeal ? predefinedMeal : "snack",
       items: foodItems
-        .filter((item) => item.name && item.calories > 0)
+        .filter((item) => item.name && item.name.trim().length > 0) // Allow 0-calorie items
         .map((item) => ({
           name: item.name,
           calories: item.calories,
@@ -214,6 +213,9 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         toast.error("User not logged in");
         return;
       }
+
+      console.log('🔑 Current User ID:', user.uid);
+      console.log('📍 Firebase path: Daily_Nutrition_Summary/' + user.uid);
       
       /*
       await addMealToDailyNutrition(user.uid, {
@@ -229,6 +231,13 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       });
       */
      for (const item of meal.items) {
+      console.log('💾 Saving meal item to Firebase:', {
+        meal_type: meal.mealType,
+        food_name: item.name,
+        brand: item.brandName,
+        calories: item.calories,
+      });
+
       await addMealToDailyNutrition(user.uid, {
         meal_type: meal.mealType,
         food_name: item.name,
@@ -242,14 +251,16 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       });
     }
 
+    console.log(` ${meal.items.length} item(s) saved to Firebase successfully!`);
+
       // 🔹 Update local app state/UI
       onMealLogged(meal);
       toast.success(
-        `✅ ${finalMealName} logged successfully! ${totals.calories} kcal added.`
+        ` ${finalMealName} logged successfully! ${totals.calories} kcal added.`
       );
       onBack();
     } catch (err) {
-      console.error("❌ Error saving meal:", err);
+      console.error(" Error saving meal:", err);
       toast.error("Error saving meal to Firestore");
     }
   };
