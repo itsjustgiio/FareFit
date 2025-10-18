@@ -4,6 +4,7 @@
 It introduces the innovative **Fitness Credit Score**, a 0–100 metric that measures how consistent you are with workouts, nutrition, and daily goals.
 
 🔗 **Live Demo:** [fare-fit.vercel.app](https://fare-fit.vercel.app)
+
 🎥 **Watch the Demo:** [YouTube Video](https://youtu.be/PPqStVtc8bU)
 
 ---
