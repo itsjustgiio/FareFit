@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import logoImage from 'figma:asset/77bf03e5d71328d3253fb9c4f7bef47edf94924a.png';
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase.ts";
+import { createUserRecords } from "../userService.ts";
 
 interface AuthPageProps {
   onLogin: (email: string, password: string) => void;

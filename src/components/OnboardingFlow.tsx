@@ -4,6 +4,8 @@ import { ChevronLeft, Star, Calendar, Ruler, Weight, Bell, CheckCircle2 } from '
 import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
 import logoImage from 'figma:asset/77bf03e5d71328d3253fb9c4f7bef47edf94924a.png';
+import { updateFitnessGoals } from '../userService';
+import { getAuth } from 'firebase/auth';
 
 interface OnboardingFlowProps {
   onComplete: (data: OnboardingData) => void;
@@ -11,7 +13,7 @@ interface OnboardingFlowProps {
 
 interface OnboardingData {
   sex: 'male' | 'female' | null;
-  birthday: Date | null;
+  birthday: string | null; // made birthday from Date to string
   height: number;
   heightUnit: 'cm' | 'ft';
   weight: number;
@@ -26,9 +28,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [data, setData] = useState<OnboardingData>({
     sex: null,
     birthday: null,
-    height: 170,
-    heightUnit: 'ft',
-    weight: 70, // Stored in kg (155 lb = ~70 kg)
+    height: 0,
+    heightUnit: 'cm', // adbhabhjd
+    weight: 0, // Stored in kg (155 lb = ~70 kg)
     weightUnit: 'lb',
     activityLevel: null,
     goal: null,
@@ -125,7 +127,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           )}
           {currentStep === 2 && (
             <BirthdayScreen
-              key="birthday"
               value={data.birthday}
               onChange={(birthday) => updateData({ birthday })}
               onContinue={nextStep}
@@ -284,6 +285,26 @@ function SexScreen({
   onChange: (sex: 'male' | 'female') => void;
   onContinue: () => void;
 }) {
+
+  const auth = getAuth();
+
+  const handleSelectSex = async (sex: 'male' | 'female') => {
+    try {
+      onChange(sex); // update local state
+      const user = auth.currentUser;
+
+      if (user) {
+        // immediately store gender in Firebase
+        await updateFitnessGoals(user.uid, "gender", sex);
+        console.log(`User gender set to ${sex} in Firebase`);
+      }
+
+      setTimeout(onContinue, 300);
+    } catch (error) {
+      console.error("Error updating user gender:", error);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -303,6 +324,7 @@ function SexScreen({
         <button
           onClick={() => {
             onChange('male');
+            handleSelectSex('male');
             setTimeout(onContinue, 300);
           }}
           className="w-full py-5 rounded-2xl border-2 transition-all flex items-center justify-center"
@@ -317,6 +339,7 @@ function SexScreen({
         <button
           onClick={() => {
             onChange('female');
+            handleSelectSex('female')
             setTimeout(onContinue, 300);
           }}
           className="w-full py-5 rounded-2xl border-2 transition-all flex items-center justify-center"
@@ -339,13 +362,41 @@ function BirthdayScreen({
   onChange,
   onContinue,
 }: {
-  value: Date | null;
-  onChange: (date: Date) => void;
+  value: string | null;
+  onChange: (birthday: string) => void;
   onContinue: () => void;
 }) {
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const date = new Date(e.target.value);
-    onChange(date);
+  const [loading, setLoading] = useState(false);
+  const auth = getAuth();
+
+  const handleBirthdaySelect = async (birthday: string) => {
+    onChange(birthday); // update local state
+    setLoading(true);
+
+    const birthDate = new Date(birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        // Save the birthday in Firestore under this user's record
+        await updateFitnessGoals(user.uid, "birthday", birthday);
+        await updateFitnessGoals(user.uid, "age", age);
+        console.log(`Birthday set to ${birthday} for user ${user.uid}`);
+        console.log(`Age set to ${age} for user ${user.uid}`);
+      }
+
+      setTimeout(onContinue, 300); // move to next onboarding step
+    } catch (error) {
+      console.error("Error updating birthday:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -354,34 +405,32 @@ function BirthdayScreen({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       className="rounded-3xl p-8 shadow-xl"
-      style={{ backgroundColor: '#E8F4F2' }}
+      style={{ backgroundColor: "#E8F4F2" }}
     >
-      <div className="text-center mb-8">
-        <div
-          className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
-          style={{ backgroundColor: '#A8E6CF' }}
-        >
-          <Calendar className="w-8 h-8" style={{ color: '#1C7C54' }} />
-        </div>
-        <h2 className="text-2xl mb-3" style={{ color: '#102A43' }}>
-          When is your birthday?
-        </h2>
-        <p style={{ color: '#102A43', opacity: 0.6 }}>
-          We use this to personalize your experience
-        </p>
-      </div>
+      <h2 className="text-2xl mb-3 text-center" style={{ color: "#102A43" }}>
+        When were you born?
+      </h2>
+      <p className="text-center mb-8" style={{ color: "#102A43", opacity: 0.6 }}>
+        This helps calculate your age for your calorie and fitness targets
+      </p>
 
-      <input
-        type="date"
-        onChange={handleDateChange}
-        max={new Date().toISOString().split('T')[0]}
-        className="w-full py-4 px-4 rounded-2xl border-2 text-center transition-all"
-        style={{
-          borderColor: value ? '#1C7C54' : '#A8E6CF',
-          color: '#102A43',
-          fontSize: '18px',
-        }}
-      />
+      <div className="flex flex-col items-center space-y-4">
+        <input
+          type="date"
+          value={value || ""}
+          onChange={(e) => handleBirthdaySelect(e.target.value)}
+          className="border border-[#A8E6CF] rounded-xl px-4 py-3 text-center"
+          style={{ color: "#102A43" }}
+        />
+
+        <button
+          onClick={onContinue}
+          disabled={!value || loading}
+          className="mt-6 px-8 py-3 rounded-xl bg-[#1C7C54] text-white"
+        >
+          {loading ? "Saving..." : "Continue"}
+        </button>
+      </div>
     </motion.div>
   );
 }
@@ -394,13 +443,16 @@ function HeightScreen({
   onUnitChange,
   onContinue,
 }: {
-  height: number;
+  height: number; // always stored in cm
   unit: 'cm' | 'ft';
   onHeightChange: (height: number) => void;
   onUnitChange: (unit: 'cm' | 'ft') => void;
   onContinue: () => void;
 }) {
-  // Convert cm to feet and inches for display
+  const [loading, setLoading] = useState(false);
+  const auth = getAuth();
+
+  // Convert cm to feet & inches
   const cmToFeetInches = (cm: number) => {
     const totalInches = cm / 2.54;
     const feet = Math.floor(totalInches / 12);
@@ -408,7 +460,41 @@ function HeightScreen({
     return `${feet}'${inches}"`;
   };
 
+  // Display value based on unit
   const displayHeight = unit === 'cm' ? Math.round(height) : cmToFeetInches(height);
+
+  // Convert feet/inches value from slider to cm
+  const convertToCm = (val: number) => (unit === 'cm' ? val : Math.round(val * 30.48));
+
+  // Handle slider change
+  const handleHeightChange = async (sliderValue: number) => {
+    const heightInCm = convertToCm(sliderValue);
+    onHeightChange(heightInCm); // update parent state immediately
+
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      if (!user) {
+        console.warn("No user logged in, skipping Firebase update.");
+        return;
+      }
+
+      await updateFitnessGoals(user.uid, "height", heightInCm);
+      console.log(`Height updated to ${heightInCm}cm for user ${user.uid}`);
+    } catch (err) {
+      console.error("Error updating height:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Slider min/max based on unit
+  const sliderMin = unit === 'cm' ? 120 : 3.9; // 3'11"
+  const sliderMax = unit === 'cm' ? 220 : 7.3; // 7'3"
+  const sliderStep = 1; // keep simple, can adjust
+
+  // Slider value in current unit
+  const sliderValue = unit === 'cm' ? height : Math.round(height / 30.48 * 10) / 10; // feet with decimal
 
   return (
     <motion.div
@@ -435,7 +521,7 @@ function HeightScreen({
         <div className="inline-flex rounded-full p-1" style={{ backgroundColor: '#E8F4F2' }}>
           <button
             onClick={() => onUnitChange('cm')}
-            className="px-6 py-2 rounded-full transition-all flex items-center justify-center"
+            className="px-6 py-2 rounded-full transition-all"
             style={{
               backgroundColor: unit === 'cm' ? '#1C7C54' : 'transparent',
               color: unit === 'cm' ? 'white' : '#102A43',
@@ -445,7 +531,7 @@ function HeightScreen({
           </button>
           <button
             onClick={() => onUnitChange('ft')}
-            className="px-6 py-2 rounded-full transition-all flex items-center justify-center"
+            className="px-6 py-2 rounded-full transition-all"
             style={{
               backgroundColor: unit === 'ft' ? '#1C7C54' : 'transparent',
               color: unit === 'ft' ? 'white' : '#102A43',
@@ -461,19 +547,23 @@ function HeightScreen({
         <p className="text-5xl mb-2" style={{ color: '#1C7C54' }}>
           {displayHeight}
         </p>
-        <p style={{ color: '#102A43', opacity: 0.6 }}>{unit === 'cm' ? 'centimeters' : 'feet/inches'}</p>
+        <p style={{ color: '#102A43', opacity: 0.6 }}>
+          {unit === 'cm' ? 'centimeters' : 'feet/inches'}
+        </p>
       </div>
 
       {/* Slider */}
       <div className="px-4">
         <Slider
-          value={[height]}
-          onValueChange={(values) => onHeightChange(values[0])}
-          min={120}
-          max={220}
-          step={1}
+          key={unit} // ensures slider re-renders on unit change
+          value={[sliderValue]}
+          onValueChange={(values) => handleHeightChange(values[0])}
+          min={sliderMin}
+          max={sliderMax}
+          step={sliderStep}
           className="mb-4"
         />
+
         <div className="flex justify-between text-xs" style={{ color: '#102A43', opacity: 0.5 }}>
           <span>{unit === 'cm' ? '120 cm' : '3\'11"'}</span>
           <span>{unit === 'cm' ? '220 cm' : '7\'3"'}</span>
@@ -497,21 +587,31 @@ function WeightScreen({
   onUnitChange: (unit: 'kg' | 'lb') => void;
   onContinue: () => void;
 }) {
-  // Convert based on current unit - weight is stored in kg internally
-  const displayWeight = unit === 'lb' ? (weight * 2.20462).toFixed(1) : weight.toFixed(1);
-  
-  // Slider range and step based on unit
-  const sliderMin = unit === 'lb' ? 66 : 30;   // 30 kg = ~66 lbs
-  const sliderMax = unit === 'lb' ? 440 : 200; // 200 kg = ~440 lbs
-  const sliderStep = unit === 'lb' ? 0.1 : 0.1;
-  
-  // Current slider value in the selected unit
-  const sliderValue = unit === 'lb' ? weight * 2.20462 : weight;
-  
-  const handleSliderChange = (values: number[]) => {
-    // Convert back to kg for storage
+  // Local state for slider
+  const [localWeight, setLocalWeight] = useState(weight);
+  const auth = getAuth();
+
+  // Convert for display
+  const displayWeight = unit === 'lb' ? (localWeight * 2.20462).toFixed(1) : localWeight.toFixed(1);
+
+  const sliderMin = unit === 'lb' ? 66 : 30;
+  const sliderMax = unit === 'lb' ? 440 : 200;
+  const sliderStep = 0.1;
+  const sliderValue = unit === 'lb' ? localWeight * 2.20462 : localWeight;
+
+  const handleSliderChange = async (values: number[]) => {
     const newWeight = unit === 'lb' ? values[0] / 2.20462 : values[0];
-    onWeightChange(newWeight);
+    const roundedWeight = Math.round(newWeight * 100) / 100;
+    setLocalWeight(roundedWeight);
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await updateFitnessGoals(user.uid, "weight", roundedWeight);
+        console.log("Weight saved to Firebase:", roundedWeight);
+      }
+    } catch (err) {
+      console.error("Error saving weight:", err);
+    }
   };
 
   return (
@@ -522,6 +622,7 @@ function WeightScreen({
       className="rounded-3xl p-8 shadow-xl"
       style={{ backgroundColor: '#E8F4F2' }}
     >
+      {/* Header */}
       <div className="text-center mb-8">
         <div
           className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
@@ -602,6 +703,7 @@ function ActivityScreen({
   onChange: (level: string) => void;
   onContinue: () => void;
 }) {
+  const auth = getAuth();
   const levels = [
     {
       label: 'Not Active',
@@ -630,6 +732,23 @@ function ActivityScreen({
     },
   ];
 
+  const handleLevelSelect = async (levelValue: string) => {
+    onChange(levelValue); // update local state
+
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await updateFitnessGoals(user.uid, "activity_level", levelValue);
+        console.log("Activity level saved to Firebase:", levelValue);
+      }
+    } catch (err) {
+      console.error("Error saving activity level:", err);
+    }
+
+    // Continue to next screen after saving
+    setTimeout(onContinue, 300);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -649,10 +768,7 @@ function ActivityScreen({
         {levels.map((level) => (
           <button
             key={level.value}
-            onClick={() => {
-              onChange(level.value);
-              setTimeout(onContinue, 300);
-            }}
+            onClick={() => handleLevelSelect(level.value)}
             className="w-full p-5 rounded-2xl border-2 transition-all text-left"
             style={{
               backgroundColor: value === level.value ? '#A8E6CF' : 'white',
@@ -666,6 +782,7 @@ function ActivityScreen({
               {level.description}
             </p>
           </button>
+
         ))}
       </div>
     </motion.div>
@@ -682,6 +799,7 @@ function GoalsScreen({
   onChange: (goal: 'lose' | 'maintain' | 'gain') => void;
   onContinue: () => void;
 }) {
+  const auth = getAuth();
   const goals = [
     {
       label: 'Lose Weight',
@@ -703,6 +821,24 @@ function GoalsScreen({
     },
   ];
 
+  const handleGoalSelect = async (goalValue: 'lose' | 'maintain' | 'gain') => {
+    onChange(goalValue); // update local state
+
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await updateFitnessGoals(user.uid, "goal_type", goalValue);
+        console.log("Goal saved to Firebase:", goalValue);
+      }
+    } catch (err) {
+      console.error("Error saving goal:", err);
+    }
+
+    // Continue to next screen after saving
+    setTimeout(onContinue, 300);
+  };
+
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -722,10 +858,7 @@ function GoalsScreen({
         {goals.map((goal) => (
           <button
             key={goal.value}
-            onClick={() => {
-              onChange(goal.value);
-              setTimeout(onContinue, 300);
-            }}
+            onClick={() => handleGoalSelect(goal.value)}
             className="w-full p-5 rounded-2xl border-2 transition-all text-left"
             style={{
               backgroundColor: value === goal.value ? '#A8E6CF' : 'white',
@@ -744,6 +877,7 @@ function GoalsScreen({
               </div>
             </div>
           </button>
+
         ))}
       </div>
     </motion.div>

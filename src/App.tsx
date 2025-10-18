@@ -28,6 +28,7 @@ import { MealLoggingPage } from './components/MealLoggingPage';
 import { AccountPage } from './components/AccountPage';
 import { ScoreCards } from './components/ScoreCards';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
+import { signupUser, createUserRecords} from './userService';
 
 interface User {
   email: string;
@@ -96,22 +97,35 @@ export default function App() {
     }
   };
 
-  const handleSignup = (email: string, password: string, name: string) => {
-    // Mock signup - in real app, you'd create user in backend
+const handleSignup = async (email: string, password: string, name: string) => {
+  try {
+    // 1. Create Firebase Auth user
+    const firebaseUser = await signupUser(email, password, name);
+
+    // 2. Create Firestore records
+    await createUserRecords(firebaseUser.uid, name, email);
+
+    // 3. Build app's local User object
     const newUser: User = {
-      email,
-      name,
+      email: firebaseUser.email || email,
+      name: firebaseUser.displayName || name,
       onboardingComplete: false,
     };
-    
-    // Save user data
+
+    // 4. Save locally
     localStorage.setItem(`farefit_user_${email}`, JSON.stringify(newUser));
     localStorage.setItem('farefit_user', JSON.stringify(newUser));
-    
+
+    // 5. Update app state
     setUser(newUser);
     setIsAuthenticated(true);
     setAuthView('onboarding');
-  };
+
+  } catch (error: any) {
+    console.error("Signup error:", error);
+    alert(error.message || "Failed to signup.");
+  }
+};
 
   const handleOnboardingComplete = (onboardingData: any) => {
     if (!user) return;
