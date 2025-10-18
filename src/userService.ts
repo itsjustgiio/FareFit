@@ -1,6 +1,13 @@
 import { db } from "./firebase";
 import { doc, setDoc, getDoc, Timestamp, updateDoc} from "firebase/firestore";
-import { getAuth, createUserWithEmailAndPassword, updateProfile} from "firebase/auth";
+import { 
+  getAuth, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  updateProfile 
+} from "firebase/auth";
 
 interface Meal {
   meal_date: string;
@@ -23,6 +30,47 @@ export const signupUser = async (email: string, password: string, name: string) 
     await updateProfile(auth.currentUser, { displayName: name });
   }
   return userCredential.user;
+};
+
+export const logInUser = async (email: string, password: string) => {
+    try {
+        const auth = getAuth();
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log("✅ User logged in successfully:", userCredential.user.email);
+        return userCredential.user;
+    } catch (error: any) {
+        console.error("❌ Error logging in:", error.message);
+        throw new Error(error.message);
+    }
+}
+
+export const logInWithGoogle = async () => {
+    try {
+        const auth = getAuth();
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+
+        const user = result.user;
+
+        // If this is their first login, create their default records
+        const userDocRef = doc(db, "Users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (!userDoc.exists()) {
+        console.log("🆕 First Google login detected — creating default records...");
+        await createUserRecords(
+            user.uid,
+            user.displayName || "Unnamed User",
+            user.email || ""
+        );
+        }
+
+        console.log("✅ Google sign-in successful:", user.email);
+        return user;
+    } catch (error: any) {
+        console.error("❌ Error with Google sign-in:", error.message);
+        throw new Error(error.message);
+    }
 };
 
 // Create default documents for a new user
@@ -160,4 +208,21 @@ const getTodayEST = (): string => {
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const estDate = new Date(utc + estOffset * 60000);
   return estDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
+};
+
+export const getUserFitnessGoals = async (userId: string) => {
+  try {
+    const docRef = doc(db, "Fitness_Goals", userId);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      console.log(`No fitness goals found for user ${userId}`);
+      return null;
+    }
+
+    return docSnap.data();
+  } catch (error) {
+    console.error(`❌ Error fetching fitness goals for user ${userId}:`, error);
+    throw error;
+  }
 };

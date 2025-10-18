@@ -28,7 +28,10 @@ import { MealLoggingPage } from './components/MealLoggingPage';
 import { AccountPage } from './components/AccountPage';
 import { ScoreCards } from './components/ScoreCards';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
-import { signupUser, createUserRecords} from './userService';
+import { logInUser, logInWithGoogle, signupUser, createUserRecords} from './userService';
+import { log } from 'node:util';
+import { signOut } from 'firebase/auth';
+import { auth } from './firebase'; // your Firebase setup
 
 interface User {
   email: string;
@@ -82,50 +85,95 @@ export default function App() {
   }, []);
 
   // Authentication handlers
-  const handleLogin = (email: string, password: string) => {
-    // Mock login - in real app, you'd validate against backend
-    const existingUser = localStorage.getItem(`farefit_user_${email}`);
-    
-    if (existingUser) {
-      const userData = JSON.parse(existingUser);
-      setUser(userData);
+  const handleLogin = async (email: string, password: string) => {
+    try {
+      // Call Firebase login
+      const firebaseUser = await logInUser(email, password);
+
+      if (!firebaseUser) {
+        alert("Login failed. Please check your credentials.");
+        return;
+      }
+
+      // Build your app's User object
+      const loggedInUser: User = {
+        email: firebaseUser.email || email,
+        name: firebaseUser.displayName || email.split("@")[0],
+        onboardingComplete: false, // you can fetch this from Firestore if you save it
+      };
+
+      // Update state
+      setUser(loggedInUser);
       setIsAuthenticated(true);
-      localStorage.setItem('farefit_user', JSON.stringify(userData));
-      setAuthView(userData.onboardingComplete ? 'app' : 'onboarding');
-    } else {
-      alert('User not found. Please sign up first.');
+
+      // Decide whether to go to onboarding or app
+      // If you track onboarding in Firestore, you can fetch it here
+      setAuthView(loggedInUser.onboardingComplete ? "app" : "onboarding");
+
+    } catch (error: any) {
+      console.error("Login error:", error);
+      alert(error.message || "Failed to login. Please try again.");
     }
   };
 
-const handleSignup = async (email: string, password: string, name: string) => {
-  try {
-    // 1. Create Firebase Auth user
-    const firebaseUser = await signupUser(email, password, name);
 
-    // 2. Create Firestore records
-    await createUserRecords(firebaseUser.uid, name, email);
+  const handleSignup = async (email: string, password: string, name: string) => {
+    try {
+      // 1. Create Firebase Auth user
+      const firebaseUser = await signupUser(email, password, name);
 
-    // 3. Build app's local User object
-    const newUser: User = {
-      email: firebaseUser.email || email,
-      name: firebaseUser.displayName || name,
-      onboardingComplete: false,
-    };
+      // 2. Create Firestore records
+      await createUserRecords(firebaseUser.uid, name, email);
 
-    // 4. Save locally
-    localStorage.setItem(`farefit_user_${email}`, JSON.stringify(newUser));
-    localStorage.setItem('farefit_user', JSON.stringify(newUser));
+      // 3. Build app's local User object
+      const newUser: User = {
+        email: firebaseUser.email || email,
+        name: firebaseUser.displayName || name,
+        onboardingComplete: false,
+      };
 
-    // 5. Update app state
-    setUser(newUser);
-    setIsAuthenticated(true);
-    setAuthView('onboarding');
+      // 4. Save locally
+      localStorage.setItem(`farefit_user_${email}`, JSON.stringify(newUser));
+      localStorage.setItem('farefit_user', JSON.stringify(newUser));
 
-  } catch (error: any) {
-    console.error("Signup error:", error);
-    alert(error.message || "Failed to signup.");
-  }
-};
+      // 5. Update app state
+      setUser(newUser);
+      setIsAuthenticated(true);
+      setAuthView('onboarding');
+
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      alert(error.message || "Failed to signup.");
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      // 1. Perform Google login via Firebase
+      const firebaseUser = await logInWithGoogle();
+
+      if (!firebaseUser) {
+        alert("Google login failed. Please try again.");
+        return;
+      }
+
+      // 2. Build your app's User object
+      const loggedInUser: User = {
+        email: firebaseUser.email!,
+        name: firebaseUser.displayName || firebaseUser.email!.split("@")[0],
+        onboardingComplete: false, // you can fetch this from Firestore if you track onboarding
+      };
+
+      // 3. Update app state
+      setUser(loggedInUser);
+      setIsAuthenticated(true);
+      setAuthView(loggedInUser.onboardingComplete ? 'app' : 'onboarding');
+
+    } catch (error: any) {
+      console.error("Google login failed:", error.message);
+      alert(error.message || "Google login failed. Please try again.");
+    }
+  };
 
   const handleOnboardingComplete = (onboardingData: any) => {
     if (!user) return;
@@ -145,7 +193,13 @@ const handleSignup = async (email: string, password: string, name: string) => {
     setShowWelcomeBanner(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth); // sign out from Firebase
+    } catch (error) {
+      console.error("Error signing out from Firebase:", error);
+    }
+    
     localStorage.removeItem('farefit_user');
     setUser(null);
     setIsAuthenticated(false);
@@ -454,6 +508,7 @@ const handleSignup = async (email: string, password: string, name: string) => {
         onSignup={handleSignup}
         onBack={() => setAuthView('landing')}
         initialMode="login"
+        onGoogleLogin={handleGoogleLogin}
       />
     );
   }

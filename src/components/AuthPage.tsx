@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import logoImage from 'figma:asset/77bf03e5d71328d3253fb9c4f7bef47edf94924a.png';
@@ -10,10 +10,11 @@ interface AuthPageProps {
   onLogin: (email: string, password: string) => void;
   onSignup: (email: string, password: string, name: string) => void;
   onBack: () => void;
+  onGoogleLogin?: () => void;
   initialMode?: 'login' | 'signup';
 }
 
-export function AuthPage({ onLogin, onSignup, onBack, initialMode = 'login' }: AuthPageProps) {
+export function AuthPage({ onLogin, onSignup, onBack, onGoogleLogin, initialMode = 'login' }: AuthPageProps) {
   const [isLogin, setIsLogin] = useState(initialMode === 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -258,6 +259,7 @@ export function AuthPage({ onLogin, onSignup, onBack, initialMode = 'login' }: A
               <div className="flex gap-3">
                 <button
                   type="button"
+                  onClick={onGoogleLogin}
                   className="flex-1 py-3 px-4 rounded-xl border-2 transition-all hover:shadow-md flex items-center justify-center gap-2"
                   style={{ borderColor: '#A8E6CF', color: '#102A43' }}
                 >
