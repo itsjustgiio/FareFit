@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { addMealToDailyNutrition, getTodayMeals } from '../userService';
+import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak} from '../userService';
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
 
@@ -207,11 +207,13 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       // 🔹 Save to Firestore
       const auth = getAuth();
       const user = auth.currentUser;
+      const userId = user?.uid;
 
       if (!user) {
         toast.error("User not logged in");
         return;
       }
+      if (!userId) return;
       
       /*
       await addMealToDailyNutrition(user.uid, {
@@ -226,6 +228,14 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         brand: meal.brandName
       });
       */
+
+      const todayMeals = await getTodayMeals(userId);
+      if (todayMeals.length === meal.items.length) {
+        // First log of the day
+        await updateUserStreak(userId);
+        console.log("✅ Streak updated for first meal of the day");
+      }
+
      for (const item of meal.items) {
       await addMealToDailyNutrition(user.uid, {
         meal_type: meal.mealType,
@@ -238,6 +248,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         fiber: item.fiber,
         brand: item.brandName,
       });
+      await updateUserFareScoreOnLog(userId, "logged_food");
     }
 
       // 🔹 Update local app state/UI
