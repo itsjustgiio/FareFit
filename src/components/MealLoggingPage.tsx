@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { addMealToDailyNutrition, getTodayMeals } from '../userService';
+import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak} from '../userService';
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
 import { BarcodeScannerCamera } from './BarcodeScannerCamera';
@@ -208,6 +208,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       // 🔹 Save to Firestore
       const auth = getAuth();
       const user = auth.currentUser;
+      const userId = user?.uid;
 
       if (!user) {
         toast.error("User not logged in");
@@ -230,6 +231,14 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         brand: meal.brandName
       });
       */
+
+      const todayMeals = await getTodayMeals(userId);
+      if (todayMeals.length === meal.items.length) {
+        // First log of the day
+        await updateUserStreak(userId);
+        console.log("✅ Streak updated for first meal of the day");
+      }
+
      for (const item of meal.items) {
       console.log('💾 Saving meal item to Firebase:', {
         meal_type: meal.mealType,
@@ -248,7 +257,10 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         fats: item.fat,
         fiber: item.fiber,
         brand: item.brandName,
+        meal_time: new Date(),
+        meal_date: new Date().toISOString().split("T")[0]
       });
+      await updateUserFareScoreOnLog(userId, "logged_food");
     }
 
     console.log(` ${meal.items.length} item(s) saved to Firebase successfully!`);
@@ -862,8 +874,17 @@ function FoodItemCard({
                       type="number"
                       step="1"
                       placeholder="120"
-                      value={item.baseCalories || ''}
-                      onChange={(e) => onUpdate(item.id, { baseCalories: parseFloat(e.target.value) || 0 })}
+                      value={item.baseCalories === 0 ? '' : item.baseCalories.toString()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        onUpdate(item.id, { baseCalories: numValue });
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '') {
+                          onUpdate(item.id, { baseCalories: 0 });
+                        }
+                      }}
                       className="mt-1"
                     />
                   </div>
@@ -873,8 +894,17 @@ function FoodItemCard({
                       type="number"
                       step="0.1"
                       placeholder="24"
-                      value={item.baseProtein || ''}
-                      onChange={(e) => onUpdate(item.id, { baseProtein: parseFloat(e.target.value) || 0 })}
+                      value={item.baseProtein === 0 ? '' : item.baseProtein.toString()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        onUpdate(item.id, { baseProtein: numValue });
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '') {
+                          onUpdate(item.id, { baseProtein: 0 });
+                        }
+                      }}
                       className="mt-1"
                     />
                   </div>
@@ -884,8 +914,17 @@ function FoodItemCard({
                       type="number"
                       step="0.1"
                       placeholder="3"
-                      value={item.baseCarbs || ''}
-                      onChange={(e) => onUpdate(item.id, { baseCarbs: parseFloat(e.target.value) || 0 })}
+                      value={item.baseCarbs === 0 ? '' : item.baseCarbs.toString()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        onUpdate(item.id, { baseCarbs: numValue });
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '') {
+                          onUpdate(item.id, { baseCarbs: 0 });
+                        }
+                      }}
                       className="mt-1"
                     />
                   </div>
@@ -895,8 +934,17 @@ function FoodItemCard({
                       type="number"
                       step="0.1"
                       placeholder="1"
-                      value={item.baseFat || ''}
-                      onChange={(e) => onUpdate(item.id, { baseFat: parseFloat(e.target.value) || 0 })}
+                      value={item.baseFat === 0 ? '' : item.baseFat.toString()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        onUpdate(item.id, { baseFat: numValue });
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '') {
+                          onUpdate(item.id, { baseFat: 0 });
+                        }
+                      }}
                       className="mt-1"
                     />
                   </div>
@@ -906,8 +954,17 @@ function FoodItemCard({
                       type="number"
                       step="0.1"
                       placeholder="1"
-                      value={item.baseFiber || ''}
-                      onChange={(e) => onUpdate(item.id, { baseFiber: parseFloat(e.target.value) || 0 })}
+                      value={item.baseFiber === 0 ? '' : item.baseFiber.toString()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const numValue = val === '' ? 0 : (parseFloat(val) || 0);
+                        onUpdate(item.id, { baseFiber: numValue });
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '') {
+                          onUpdate(item.id, { baseFiber: 0 });
+                        }
+                      }}
                       className="mt-1"
                     />
                   </div>

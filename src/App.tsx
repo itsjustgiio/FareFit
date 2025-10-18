@@ -769,7 +769,7 @@ export default function App() {
         
         {/* Main Dashboard Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <CaloriesCard 
+          <CaloriesCard
             onFoodAIClick={() => setCurrentPage('food-assistant')}
             onLogMealClick={() => setCurrentPage('meal-logging')}
             userGoal={userGoal}
