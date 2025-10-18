@@ -126,7 +126,8 @@ export async function createUserRecords(userId: string, name: string, email: str
             protein: 0,
             carbs: 0,
             fats: 0,
-            fiber: 0
+            fiber: 0,
+            meal_time: null
         }]
     });
 
@@ -179,6 +180,8 @@ export const addMealToDailyNutrition = async (
     carbs: number;
     fats: number;
     fiber: number;
+    meal_time: Date;
+    meal_date: string;
   }
 ) => {
   try {

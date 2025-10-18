@@ -249,6 +249,8 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         fats: item.fat,
         fiber: item.fiber,
         brand: item.brandName,
+        meal_time: new Date(),
+        meal_date: new Date().toISOString().split("T")[0]
       });
       await updateUserFareScoreOnLog(userId, "logged_food");
     }
