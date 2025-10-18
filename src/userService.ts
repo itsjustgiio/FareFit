@@ -110,6 +110,7 @@ export async function createUserRecords(userId: string, name: string, email: str
       protein_target: null,
       carbs_target: null,
       fats_target: null,
+      fiber_target: null,
       created_at: Timestamp.now(),
       is_active: true,
     });
@@ -125,9 +126,23 @@ export async function createUserRecords(userId: string, name: string, email: str
             protein: 0,
             carbs: 0,
             fats: 0,
-            fiber: 0
+            fiber: 0,
+            meal_time: null
         }]
     });
+
+    // Help me here chat gpt
+    await setDoc(doc(db, "FareScore", userId), {
+      score: 350,
+      tier: null,
+      mealsLogged: 0,
+      workoutsCompleted: 0,
+      streakDays: 0,
+      lastStreakDate: '2025-10-17', // NEW FIELD
+      penalties: 0,
+      joinDate: 'August 15, 2025',
+    });
+
 
     console.log("Default user records created successfully!");
   } catch (err) {
@@ -179,6 +194,8 @@ export const addMealToDailyNutrition = async (
     carbs: number;
     fats: number;
     fiber: number;
+    meal_time: Date;
+    meal_date: string;
   }
 ) => {
   try {
@@ -259,4 +276,80 @@ export const getUserFitnessGoals = async (userId: string) => {
     console.error(`❌ Error fetching fitness goals for user ${userId}:`, error);
     throw error;
   }
+};
+
+export const updateUserStreak = async (userId: string) => {
+  const fareRef = doc(db, "FareScore", userId);
+  const fareSnap = await getDoc(fareRef);
+  if (!fareSnap.exists()) return;
+
+  const data = fareSnap.data();
+  const lastDateStr = data.lastStreakDate;
+  const todayStr = getTodayEST();
+
+  const lastDate = lastDateStr ? new Date(lastDateStr) : null;
+  const today = new Date(todayStr);
+  const oneDay = 24 * 60 * 60 * 1000;
+
+  let newStreak = 1;
+  let newScore = data.score;
+
+  if (lastDate) {
+    const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / oneDay);
+
+    if (diffDays === 0) {
+      // Already logged today
+      console.log("✅ Streak already counted today.");
+      return;
+    } else if (diffDays === 1) {
+      // Continue streak
+      newStreak = data.streakDays + 1;
+    } else if (diffDays <= 6) {
+      // Missed daily logs → break streak
+      newStreak = 1;
+      newScore -= 5; // break streak penalty
+      console.log("⚠️ Streak broken, -5 points");
+    } else if (diffDays >= 7) {
+      // Inactive for a week
+      newStreak = 1;
+      newScore -= 10; // inactivity penalty
+      console.log("⚠️ Inactive for a week, -10 points");
+    }
+
+    // Optional: small daily log penalty
+    if (diffDays === 2) newScore -= 2; // Missed 1 day
+  }
+
+  await updateDoc(fareRef, {
+    streakDays: newStreak,
+    lastStreakDate: todayStr,
+    score: newScore,
+  });
+
+  console.log(`✅ Updated streak: ${newStreak}, FareScore: ${newScore}`);
+};
+
+export const updateUserFareScoreOnLog = async (userId: string, eventName: string) => {
+  const docRef = doc(db, "FareScore", userId);
+  const docSnap = await getDoc(docRef);
+
+  if (!docSnap.exists()) {
+    console.error("❌ FareScore document does not exist for user:", userId);
+    return;
+  }
+
+  const data = docSnap.data();
+  let newScore = data.score || 0;
+
+  if (eventName === "logged_food") {
+    newScore += 1;
+  } else if (eventName === "macros_hit") {
+    newScore += 2;
+  } else {
+    console.warn(`⚠️ Event "${eventName}" not recognized. No score update.`);
+    return;
+  }
+
+  await updateDoc(docRef, { score: newScore });
+  console.log(`✅ FareScore updated for ${eventName}: ${newScore}`);
 };
