@@ -27,6 +27,7 @@ Development guides and implementation notes:
 - `AUTHENTICATION_FLOW.md` - User authentication system
 - `DARK_MODE_COMPLETE.md` - Dark mode implementation
 - `QUICK_DARK_MODE_FIX.md` - Dark mode fixes
+- `GEMINI_INTEGRATION.md` - Google Gemini AI setup and integration
 
 ### `/guidelines/`
 
