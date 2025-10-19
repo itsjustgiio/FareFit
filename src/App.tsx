@@ -31,7 +31,7 @@ import DevToolsPage from './components/DevToolsPage';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
 import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardingStatus, setOnboardingComplete, migrateOnboardingStatus } from './userService';
 import { log } from 'node:util';
-import { signOut } from 'firebase/auth';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase'; // your Firebase setup
 import { onSnapshot, doc, getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -393,20 +393,32 @@ export default function App() {
   const [fareScore, setFareScore] = useState(350); // Starting score for new users
   const [fareScoreChange, setFareScoreChange] = useState(0); // Weekly change
 
-  // 🔥 Real-time FareScore listener
+  // Track authentication state
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  
+  // Listen for auth state changes
   useEffect(() => {
     const auth = getAuth();
-    const user = auth.currentUser;
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+      console.log("🔐 Auth state changed:", user ? `User: ${user.uid}` : "No user");
+    });
     
+    return () => unsubscribe();
+  }, []);
+
+  // 🔥 Real-time FareScore listener
+  useEffect(() => {
     // Only set up real-time listener for authenticated users (not demo mode)
-    if (!user || isDemoMode) {
+    if (!currentUser || isDemoMode) {
+      console.log("🔥 Skipping FareScore listener:", { currentUser: !!currentUser, isDemoMode });
       return;
     }
 
     const db = getFirestore();
-    const fareScoreDocRef = doc(db, "FareScore", user.uid);
+    const fareScoreDocRef = doc(db, "FareScore", currentUser.uid);
     
-    console.log("🔥 Setting up real-time FareScore listener for:", user.uid);
+    console.log("🔥 Setting up real-time FareScore listener for:", currentUser.uid);
     
     const unsubscribe = onSnapshot(fareScoreDocRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -432,7 +444,7 @@ export default function App() {
       console.log("🔥 Cleaning up FareScore listener");
       unsubscribe();
     };
-  }, [isDemoMode]); // Re-run when demo mode changes
+  }, [isDemoMode, currentUser]); // Re-run when demo mode or user changes
 
   // Calculate Daily Score (0-100) - represents today's progress toward max points
   const getDailyScoreBreakdown = (): DailyScoreBreakdown => {
