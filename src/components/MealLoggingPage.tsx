@@ -582,7 +582,7 @@ function ManualEntryTab({
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#F5A623' }}
               >
-                {todayTotals.protein}g
+                {Math.round(todayTotals.protein)}g
               </motion.p>
             </div>
             <div className="text-center">
@@ -595,7 +595,7 @@ function ManualEntryTab({
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#4DD4AC' }}
               >
-                {todayTotals.carbs}g
+                {Math.round(todayTotals.carbs)}g
               </motion.p>
             </div>
             <div className="text-center">
@@ -608,7 +608,7 @@ function ManualEntryTab({
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#6B47DC' }}
               >
-                {todayTotals.fats}g
+                {Math.round(todayTotals.fats)}g
               </motion.p>
             </div>
             <div className="text-center">
@@ -621,7 +621,7 @@ function ManualEntryTab({
                 animate={{ y: 0, opacity: 1 }}
                 style={{ color: '#1C7C54' }}
               >
-                {todayTotals.fiber}g
+                {Math.round(todayTotals.fiber)}g
               </motion.p>
             </div>
           </div>
@@ -1002,19 +1002,19 @@ function FoodItemCard({
                     </div>
                     <div>
                       <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Protein</p>
-                      <p className="text-sm" style={{ color: '#F5A623' }}>{item.protein}g</p>
+                      <p className="text-sm" style={{ color: '#F5A623' }}>{Math.round(item.protein || 0)}g</p>
                     </div>
                     <div>
                       <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Carbs</p>
-                      <p className="text-sm" style={{ color: '#4DD4AC' }}>{item.carbs}g</p>
+                      <p className="text-sm" style={{ color: '#4DD4AC' }}>{Math.round(item.carbs || 0)}g</p>
                     </div>
                     <div>
                       <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Fat</p>
-                      <p className="text-sm" style={{ color: '#6B47DC' }}>{item.fat}g</p>
+                      <p className="text-sm" style={{ color: '#6B47DC' }}>{Math.round(item.fat || 0)}g</p>
                     </div>
                     <div>
                       <p className="text-xs opacity-60" style={{ color: '#102A43' }}>Fiber</p>
-                      <p className="text-sm" style={{ color: '#1C7C54' }}>{item.fiber}g</p>
+                      <p className="text-sm" style={{ color: '#1C7C54' }}>{Math.round(item.fiber || 0)}g</p>
                     </div>
                   </div>
                 </div>
@@ -1404,10 +1404,10 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                             </p>
                           )}
                           <div className="flex gap-3 mt-1 text-xs" style={{ color: '#102A43', opacity: 0.7 }}>
-                            <span>{product.calories} kcal</span>
-                            <span>P: {product.protein}g</span>
-                            <span>C: {product.carbs}g</span>
-                            <span>F: {product.fats}g</span>
+                            <span>{Math.round(product.calories || 0)} kcal</span>
+                            <span>P: {Math.round(product.protein || 0)}g</span>
+                            <span>C: {Math.round(product.carbs || 0)}g</span>
+                            <span>F: {Math.round(product.fats || 0)}g</span>
                           </div>
                           {product.scan_count > 1 && (
                             <p className="text-xs mt-1" style={{ color: '#1C7C54' }}>
@@ -1461,7 +1461,7 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                 <div className="h-px" style={{ backgroundColor: '#A8E6CF' }}></div>
                 <div className="flex justify-between">
                   <span style={{ color: '#102A43' }}>Calories:</span>
-                  <strong style={{ color: '#102A43' }}>{scannedData.calories} kcal</strong>
+                  <strong style={{ color: '#102A43' }}>{Math.round(scannedData.calories || 0)} kcal</strong>
                 </div>
                 <div className="grid grid-cols-4 gap-2 pt-2">
                   <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
@@ -1469,7 +1469,7 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                       Protein
                     </p>
                     <p className="text-sm" style={{ color: '#F5A623' }}>
-                      {scannedData.protein}g
+                      {Math.round(scannedData.protein || 0)}g
                     </p>
                   </div>
                   <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
@@ -1477,7 +1477,7 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                       Carbs
                     </p>
                     <p className="text-sm" style={{ color: '#4DD4AC' }}>
-                      {scannedData.carbs}g
+                      {Math.round(scannedData.carbs || 0)}g
                     </p>
                   </div>
                   <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
@@ -1485,7 +1485,7 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                       Fat
                     </p>
                     <p className="text-sm" style={{ color: '#6B47DC' }}>
-                      {scannedData.fat}g
+                      {Math.round(scannedData.fat || 0)}g
                     </p>
                   </div>
                   <div className="text-center p-2 rounded" style={{ backgroundColor: 'white' }}>
@@ -1493,7 +1493,7 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                       Fiber
                     </p>
                     <p className="text-sm" style={{ color: '#1C7C54' }}>
-                      {scannedData.fiber}g
+                      {Math.round(scannedData.fiber || 0)}g
                     </p>
                   </div>
                 </div>
@@ -1539,10 +1539,24 @@ function PhotoScanTab({ onMealDetected }: any) {
   };
 
   const processImageFiles = (files: File[]) => {
+    // Supported image formats
+    const supportedTypes = [
+      'image/jpeg',
+      'image/jpg', 
+      'image/png',
+      'image/webp',
+      'image/heic',
+      'image/heif'
+    ];
+
     // Filter and validate image files
     const validImageFiles = files.filter(file => {
-      if (!file.type.startsWith('image/')) {
-        toast.error(`${file.name} is not a valid image file`);
+      console.log(`📁 File: ${file.name}, Type: ${file.type}, Size: ${file.size}`);
+      
+      // Check if it's a supported image type
+      const isImage = file.type.startsWith('image/') || supportedTypes.includes(file.type.toLowerCase());
+      if (!isImage) {
+        toast.error(`${file.name} is not a supported image format. Supported: JPEG, PNG, WebP, HEIC`);
         return false;
       }
       if (file.size > 10 * 1024 * 1024) {
@@ -1731,7 +1745,7 @@ function PhotoScanTab({ onMealDetected }: any) {
             <input
               id="photo-upload"
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
               capture="environment"
               multiple
               onChange={handleImageUpload}

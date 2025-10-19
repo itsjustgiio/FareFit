@@ -181,20 +181,33 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
   const remainingCalories = targetCalories - netCalories;
 
   // Calculate macro percentages using real data
-  const proteinConsumed = totals.protein || 0;
-  const carbsConsumed = totals.carbs || 0;
-  const fatConsumed = totals.fat || 0;
-  const fiberConsumed = totals.fiber || 0;
+  const proteinConsumedRaw = totals.protein || 0;
+  const carbsConsumedRaw = totals.carbs || 0;
+  const fatConsumedRaw = totals.fat || 0;
+  const fiberConsumedRaw = totals.fiber || 0;
+
+  // Round for display
+  const proteinConsumed = Math.round(proteinConsumedRaw);
+  const carbsConsumed = Math.round(carbsConsumedRaw);
+  const fatConsumed = Math.round(fatConsumedRaw);
+  const fiberConsumed = Math.round(fiberConsumedRaw);
 
   const proteinTarget = userGoal?.protein || 165;
   const carbsTarget = userGoal?.carbs || 220;
   const fatTarget = userGoal?.fat || 73;
   const fiberTarget = 30;
 
-  const proteinPercent = (proteinConsumed / proteinTarget) * 100;
-  const carbsPercent = (carbsConsumed / carbsTarget) * 100;
-  const fatPercent = (fatConsumed / fatTarget) * 100;
-  const fiberPercent = (fiberConsumed / fiberTarget) * 100;
+  // Use raw values for percentage calculations
+  const proteinPercent = (proteinConsumedRaw / proteinTarget) * 100;
+  const carbsPercent = (carbsConsumedRaw / carbsTarget) * 100;
+  const fatPercent = (fatConsumedRaw / fatTarget) * 100;
+  const fiberPercent = (fiberConsumedRaw / fiberTarget) * 100;
+
+  // Check if targets are hit (within reasonable range)
+  const proteinHit = proteinPercent >= 90 && proteinPercent <= 110;
+  const carbsHit = carbsPercent >= 90 && carbsPercent <= 110;
+  const fatHit = fatPercent >= 90 && fatPercent <= 110;
+  const fiberHit = fiberPercent >= 90;
 
   // Date navigation
   const previousDay = () => {
@@ -232,6 +245,18 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
 
   return (
     <>
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% {
+              transform: scale(1);
+            }
+            50% {
+              transform: scale(1.02);
+            }
+          }
+        `}
+      </style>
       <div className="min-h-screen" style={{ backgroundColor: '#E8F4F2' }}>
         <header className="px-4 sm:px-6 lg:px-8 py-4" style={{ backgroundColor: '#1C7C54' }}>
           <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -360,7 +385,14 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
               {/* Protein */}
               <div className="flex flex-col items-center">
                 <p className="text-sm mb-3" style={{ color: '#F5A623' }}>Protein</p>
-                <div className="relative w-32 h-32 mb-3">
+                <div 
+                  className="relative w-32 h-32 mb-3 transition-all duration-500"
+                  style={{
+                    boxShadow: proteinHit ? '0 0 20px rgba(245, 166, 35, 0.8), 0 0 40px rgba(245, 166, 35, 0.4)' : 'none',
+                    borderRadius: '50%',
+                    animation: proteinHit ? 'pulse 2s infinite' : 'none'
+                  }}
+                >
                   <svg className="w-full h-full transform -rotate-90">
                     <circle
                       cx="64"
@@ -374,8 +406,8 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                       cx="64"
                       cy="64"
                       r="56"
-                      stroke="#F5A623"
-                      strokeWidth="10"
+                      stroke={proteinHit ? "#FFD700" : "#F5A623"}
+                      strokeWidth={proteinHit ? "12" : "10"}
                       fill="none"
                       strokeDasharray={`${(proteinPercent / 100) * 352} 352`}
                       strokeLinecap="round"
@@ -383,19 +415,34 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl" style={{ color: '#102A43' }}>{proteinConsumed}</span>
+                    <span 
+                      className={`text-3xl transition-all duration-300 ${proteinHit ? 'font-bold scale-110' : ''}`} 
+                      style={{ 
+                        color: proteinHit ? '#F5A623' : '#102A43',
+                        textShadow: proteinHit ? '0 0 10px rgba(245, 166, 35, 0.6)' : 'none'
+                      }}
+                    >
+                      {proteinConsumed}
+                    </span>
                     <span className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>/{proteinTarget}g</span>
                   </div>
                 </div>
-                <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                  {Math.max(0, proteinTarget - proteinConsumed)}g left
+                <p className="text-sm" style={{ color: proteinHit ? '#F5A623' : '#102A43', opacity: proteinHit ? 1 : 0.6 }}>
+                  {proteinHit ? '🏆 Target hit!' : `${Math.max(0, proteinTarget - proteinConsumed)}g left`}
                 </p>
               </div>
 
               {/* Carbohydrates */}
               <div className="flex flex-col items-center">
                 <p className="text-sm mb-3" style={{ color: '#4DD4AC' }}>Carbohydrates</p>
-                <div className="relative w-32 h-32 mb-3">
+                <div 
+                  className="relative w-32 h-32 mb-3 transition-all duration-500"
+                  style={{
+                    boxShadow: carbsHit ? '0 0 20px rgba(77, 212, 172, 0.8), 0 0 40px rgba(77, 212, 172, 0.4)' : 'none',
+                    borderRadius: '50%',
+                    animation: carbsHit ? 'pulse 2s infinite' : 'none'
+                  }}
+                >
                   <svg className="w-full h-full transform -rotate-90">
                     <circle
                       cx="64"
@@ -409,8 +456,8 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                       cx="64"
                       cy="64"
                       r="56"
-                      stroke="#4DD4AC"
-                      strokeWidth="10"
+                      stroke={carbsHit ? "#00FF88" : "#4DD4AC"}
+                      strokeWidth={carbsHit ? "12" : "10"}
                       fill="none"
                       strokeDasharray={`${(carbsPercent / 100) * 352} 352`}
                       strokeLinecap="round"
@@ -418,19 +465,34 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl" style={{ color: '#102A43' }}>{carbsConsumed}</span>
+                    <span 
+                      className={`text-3xl transition-all duration-300 ${carbsHit ? 'font-bold scale-110' : ''}`} 
+                      style={{ 
+                        color: carbsHit ? '#4DD4AC' : '#102A43',
+                        textShadow: carbsHit ? '0 0 10px rgba(77, 212, 172, 0.6)' : 'none'
+                      }}
+                    >
+                      {carbsConsumed}
+                    </span>
                     <span className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>/{carbsTarget}g</span>
                   </div>
                 </div>
-                <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                  {Math.max(0, carbsTarget - carbsConsumed)}g left
+                <p className="text-sm" style={{ color: carbsHit ? '#4DD4AC' : '#102A43', opacity: carbsHit ? 1 : 0.6 }}>
+                  {carbsHit ? '🏆 Target hit!' : `${Math.max(0, carbsTarget - carbsConsumed)}g left`}
                 </p>
               </div>
 
               {/* Fat */}
               <div className="flex flex-col items-center">
                 <p className="text-sm mb-3" style={{ color: '#6B47DC' }}>Fat</p>
-                <div className="relative w-32 h-32 mb-3">
+                <div 
+                  className="relative w-32 h-32 mb-3 transition-all duration-500"
+                  style={{
+                    boxShadow: fatHit ? '0 0 20px rgba(107, 71, 220, 0.8), 0 0 40px rgba(107, 71, 220, 0.4)' : 'none',
+                    borderRadius: '50%',
+                    animation: fatHit ? 'pulse 2s infinite' : 'none'
+                  }}
+                >
                   <svg className="w-full h-full transform -rotate-90">
                     <circle
                       cx="64"
@@ -444,8 +506,8 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                       cx="64"
                       cy="64"
                       r="56"
-                      stroke="#6B47DC"
-                      strokeWidth="10"
+                      stroke={fatHit ? "#8A5CF6" : "#6B47DC"}
+                      strokeWidth={fatHit ? "12" : "10"}
                       fill="none"
                       strokeDasharray={`${(fatPercent / 100) * 352} 352`}
                       strokeLinecap="round"
@@ -453,19 +515,34 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl" style={{ color: '#102A43' }}>{fatConsumed}</span>
+                    <span 
+                      className={`text-3xl transition-all duration-300 ${fatHit ? 'font-bold scale-110' : ''}`} 
+                      style={{ 
+                        color: fatHit ? '#6B47DC' : '#102A43',
+                        textShadow: fatHit ? '0 0 10px rgba(107, 71, 220, 0.6)' : 'none'
+                      }}
+                    >
+                      {fatConsumed}
+                    </span>
                     <span className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>/{fatTarget}g</span>
                   </div>
                 </div>
-                <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                  {Math.max(0, fatTarget - fatConsumed)}g left
+                <p className="text-sm" style={{ color: fatHit ? '#6B47DC' : '#102A43', opacity: fatHit ? 1 : 0.6 }}>
+                  {fatHit ? '🏆 Target hit!' : `${Math.max(0, fatTarget - fatConsumed)}g left`}
                 </p>
               </div>
 
               {/* Fiber */}
               <div className="flex flex-col items-center">
                 <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>Fiber</p>
-                <div className="relative w-32 h-32 mb-3">
+                <div 
+                  className="relative w-32 h-32 mb-3 transition-all duration-500"
+                  style={{
+                    boxShadow: fiberHit ? '0 0 20px rgba(28, 124, 84, 0.8), 0 0 40px rgba(28, 124, 84, 0.4)' : 'none',
+                    borderRadius: '50%',
+                    animation: fiberHit ? 'pulse 2s infinite' : 'none'
+                  }}
+                >
                   <svg className="w-full h-full transform -rotate-90">
                     <circle
                       cx="64"
@@ -479,8 +556,8 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                       cx="64"
                       cy="64"
                       r="56"
-                      stroke="#1C7C54"
-                      strokeWidth="10"
+                      stroke={fiberHit ? "#22C55E" : "#1C7C54"}
+                      strokeWidth={fiberHit ? "12" : "10"}
                       fill="none"
                       strokeDasharray={`${(fiberPercent / 100) * 352} 352`}
                       strokeLinecap="round"
@@ -488,12 +565,20 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl" style={{ color: '#102A43' }}>{fiberConsumed}</span>
+                    <span 
+                      className={`text-3xl transition-all duration-300 ${fiberHit ? 'font-bold scale-110' : ''}`} 
+                      style={{ 
+                        color: fiberHit ? '#1C7C54' : '#102A43',
+                        textShadow: fiberHit ? '0 0 10px rgba(28, 124, 84, 0.6)' : 'none'
+                      }}
+                    >
+                      {fiberConsumed}
+                    </span>
                     <span className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>/{fiberTarget}g</span>
                   </div>
                 </div>
-                <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                  {Math.max(0, fiberTarget - fiberConsumed)}g left
+                <p className="text-sm" style={{ color: fiberHit ? '#1C7C54' : '#102A43', opacity: fiberHit ? 1 : 0.6 }}>
+                  {fiberHit ? '🏆 Target hit!' : `${Math.max(0, fiberTarget - fiberConsumed)}g left`}
                 </p>
               </div>
             </div>
