@@ -1884,3 +1884,14 @@ export const initializePlanCollectionsForUser = async (userId: string) => {
     throw error;
   }
 };
+
+// Add to userService.ts
+export const getTodaysWorkoutStatus = async (userId: string): Promise<boolean> => {
+  try {
+    const workoutData = await getWorkoutExercises();
+    return workoutData?.workout?.length > 0;
+  } catch (error) {
+    console.error('Error checking workout status:', error);
+    return false;
+  }
+};

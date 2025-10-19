@@ -1104,7 +1104,7 @@ export default function App() {
           fareScore={fareScore}
           fareScoreChange={fareScoreChange}
           dailyScore={dailyScore}
-          dailyBreakdown={dailyScoreBreakdown}
+          userId={currentUser.uid} // Add this
           onFareScoreClick={() => setCurrentPage('account')}
           isDemoMode={isDemoMode}
         />

@@ -3,35 +3,98 @@ import { motion } from 'motion/react';
 import { Badge } from './ui/badge';
 import { getTier, getScoreColor } from '../utils/fareScoreCalculator';
 import { DailyScoreBreakdown } from '../utils/dailyScoreCalculator';
+import { useState, useEffect } from 'react';
+import { calculateDailyScore } from '../utils/dailyScoreCalculator';
 
 interface ScoreCardsProps {
   fareScore: number;
   fareScoreChange: number; // Weekly change
   dailyScore: number; // 0-100
-  dailyBreakdown?: DailyScoreBreakdown;
   onFareScoreClick?: () => void;
   isDemoMode?: boolean;
+  userId: string; // Add userId prop
 }
 
 export function ScoreCards({ 
   fareScore, 
   fareScoreChange, 
-  dailyScore, 
-  dailyBreakdown,
+  dailyScore,
   onFareScoreClick,
-  isDemoMode = false 
+  isDemoMode = false,
+  userId 
 }: ScoreCardsProps) {
+  const [dailyBreakdown, setDailyBreakdown] = useState<DailyScoreBreakdown | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [animatedDailyScore, setAnimatedDailyScore] = useState(0);
+
+  useEffect(() => {
+    const loadDailyScore = async () => {
+      if (isDemoMode) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        const scoreData = await calculateDailyScore(userId);
+        setDailyBreakdown(scoreData.breakdown);
+        
+        // Animate the daily score progress
+        animateValue(0, scoreData.totalScore, 1000, setAnimatedDailyScore);
+      } catch (error) {
+        console.error('Error loading daily score:', error);
+        setAnimatedDailyScore(dailyScore);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDailyScore();
+  }, [userId, isDemoMode, dailyScore]);
+
+  // Animation function for smooth number transition
+  const animateValue = (start: number, end: number, duration: number, setValue: (value: number) => void) => {
+    const startTime = performance.now();
+    
+    const updateValue = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function for smooth animation
+      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+      const currentValue = Math.round(start + (end - start) * easeOutQuart);
+      
+      setValue(currentValue);
+      
+      if (progress < 1) {
+        requestAnimationFrame(updateValue);
+      }
+    };
+    
+    requestAnimationFrame(updateValue);
+  };
+
   const tier = getTier(fareScore);
   const tierColor = getScoreColor(fareScore);
   
   // Calculate daily score percentage for progress ring
-  const dailyScorePercentage = dailyScore;
-  const circumference = 2 * Math.PI * 32;
+  const dailyScorePercentage = animatedDailyScore;
+  const circumference = 2 * Math.PI * 36; // Increased radius for better visibility
   const dailyStrokeDashoffset = circumference - (dailyScorePercentage / 100) * circumference;
 
   // Calculate FareScore percentage (300-850 range)
   const fareScorePercentage = ((fareScore - 300) / (850 - 300)) * 100;
   const fareStrokeDashoffset = circumference - (fareScorePercentage / 100) * circumference;
+
+  // Get color for daily score based on value
+  const getDailyScoreColor = (score: number) => {
+    if (score === 100) return '#FFD700';
+    if (score >= 75) return '#1C7C54';
+    if (score >= 50) return '#4DD4AC';
+    if (score >= 25) return '#F5A623';
+    return '#E53E3E';
+  };
+
+  const dailyScoreColor = getDailyScoreColor(animatedDailyScore);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -85,52 +148,46 @@ export function ScoreCards({
         <div className="flex items-center gap-6">
           {/* Circular Progress */}
           <div className="relative w-24 h-24 flex-shrink-0">
-            <svg className="w-full h-full transform -rotate-90">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
               {/* Background circle */}
               <circle
-                cx="48"
-                cy="48"
-                r="32"
+                cx="50"
+                cy="50"
+                r="36"
                 stroke="var(--accent-light)"
                 strokeWidth="8"
                 fill="none"
               />
               {/* Progress circle */}
               <circle
-                cx="48"
-                cy="48"
-                r="32"
+                cx="50"
+                cy="50"
+                r="36"
                 stroke={tierColor}
                 strokeWidth="8"
                 fill="none"
                 strokeDasharray={circumference}
                 strokeDashoffset={fareStrokeDashoffset}
                 strokeLinecap="round"
-                style={{ transition: 'stroke-dashoffset 1s ease-in-out' }}
+                style={{ 
+                  transition: 'stroke-dashoffset 1.5s ease-in-out',
+                  filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.1))'
+                }}
               />
             </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl" style={{ color: tierColor }}>
-                  {fareScore}
-                </div>
+            <div className="absolute inset-0 flex items-center justify-center flex-col">
+              <div className="text-2xl font-semibold" style={{ color: tierColor }}>
+                {fareScore}
+              </div>
+              <div className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                {tier.label}
               </div>
             </div>
           </div>
 
           {/* Details */}
           <div className="flex-1 min-w-0">
-            <Badge
-              style={{
-                backgroundColor: tierColor,
-                color: 'white',
-                fontSize: '12px',
-                marginBottom: '8px',
-              }}
-            >
-              {tier.label}
-            </Badge>
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
               Range: 300-850
             </p>
             <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
@@ -165,15 +222,16 @@ export function ScoreCards({
           </div>
           
           {/* Perfect Day Badge */}
-          {dailyScore === 100 && (
+          {animatedDailyScore === 100 && (
             <Badge
               style={{
                 backgroundColor: '#FFD700',
                 color: '#102A43',
                 fontSize: '11px',
+                fontWeight: '600',
               }}
             >
-              Perfect!
+              Perfect Day!
             </Badge>
           )}
         </div>
@@ -181,38 +239,42 @@ export function ScoreCards({
         <div className="flex items-center gap-6">
           {/* Circular Progress */}
           <div className="relative w-24 h-24 flex-shrink-0">
-            <svg className="w-full h-full transform -rotate-90">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
               {/* Background circle */}
               <circle
-                cx="48"
-                cy="48"
-                r="32"
+                cx="50"
+                cy="50"
+                r="36"
                 stroke="var(--accent-light)"
                 strokeWidth="8"
                 fill="none"
               />
               {/* Progress circle */}
               <circle
-                cx="48"
-                cy="48"
-                r="32"
-                stroke={dailyScore === 100 ? '#FFD700' : dailyScore >= 75 ? '#1C7C54' : dailyScore >= 50 ? '#4DD4AC' : '#F5A623'}
+                cx="50"
+                cy="50"
+                r="36"
+                stroke={dailyScoreColor}
                 strokeWidth="8"
                 fill="none"
                 strokeDasharray={circumference}
                 strokeDashoffset={dailyStrokeDashoffset}
                 strokeLinecap="round"
-                style={{ transition: 'stroke-dashoffset 1s ease-in-out' }}
+                style={{ 
+                  transition: 'stroke-dashoffset 1.5s ease-in-out',
+                  filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.1))'
+                }}
               />
             </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl" style={{ color: dailyScore === 100 ? '#FFD700' : dailyScore >= 75 ? '#1C7C54' : dailyScore >= 50 ? '#4DD4AC' : '#F5A623' }}>
-                  {dailyScore}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  / 100
-                </div>
+            <div className="absolute inset-0 flex items-center justify-center flex-col">
+              <div 
+                className="text-2xl font-semibold transition-colors duration-500"
+                style={{ color: dailyScoreColor }}
+              >
+                {animatedDailyScore}
+              </div>
+              <div className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                / 100 
               </div>
             </div>
           </div>
@@ -220,7 +282,12 @@ export function ScoreCards({
           {/* Details */}
           <div className="flex-1 min-w-0">
             <div className="space-y-2">
-              {dailyBreakdown ? (
+              {loading ? (
+                // Loading state
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Loading today's progress...
+                </div>
+              ) : dailyBreakdown ? (
                 <>
                   <DailyScoreItem 
                     label="Meals logged" 
@@ -244,6 +311,7 @@ export function ScoreCards({
                   />
                 </>
               ) : (
+                // Fallback to demo data
                 <>
                   <DailyScoreItem label="Meals logged" points={30} earned={dailyScore >= 20} />
                   <DailyScoreItem label="Workout done" points={30} earned={dailyScore >= 50} />
@@ -252,6 +320,27 @@ export function ScoreCards({
                 </>
               )}
             </div>
+            
+            {/* Progress summary */}
+            {!loading && (
+              <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--accent-light)', border: '1px solid var(--border-color)' }}>
+                <div className="flex justify-between items-center text-xs">
+                  <span style={{ color: 'var(--text-secondary)' }}>Today's Progress</span>
+                  <span style={{ color: dailyScoreColor, fontWeight: '600' }}>
+                    {animatedDailyScore}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2" style={{ backgroundColor: 'var(--border-color)' }}>
+                  <div 
+                    className="h-1.5 rounded-full transition-all duration-1000 ease-out"
+                    style={{ 
+                      width: `${animatedDailyScore}%`,
+                      backgroundColor: dailyScoreColor
+                    }}
+                  ></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -276,26 +365,30 @@ function DailyScoreItem({
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         <div
-          className="w-1.5 h-1.5 rounded-full"
+          className="w-1.5 h-1.5 rounded-full transition-all duration-300"
           style={{
             backgroundColor: isComplete ? '#1C7C54' : isPartial ? '#4DD4AC' : 'var(--accent-light)',
+            transform: isComplete ? 'scale(1.1)' : 'scale(1)',
+            boxShadow: isComplete ? '0 0 4px rgba(28, 124, 84, 0.4)' : 'none'
           }}
         />
         <span
-          className="text-xs"
+          className="text-xs transition-all duration-300"
           style={{
             color: 'var(--text-primary)',
-            opacity: earnedPoints > 0 ? 0.8 : 0.5,
+            opacity: earnedPoints > 0 ? 0.9 : 0.5,
+            fontWeight: isComplete ? '600' : '400'
           }}
         >
           {label}
         </span>
       </div>
       <span
-        className="text-xs"
+        className="text-xs transition-all duration-300"
         style={{
           color: isComplete ? '#1C7C54' : isPartial ? '#4DD4AC' : 'var(--text-primary)',
           opacity: earnedPoints > 0 ? 1 : 0.4,
+          fontWeight: isComplete ? '600' : '400'
         }}
       >
         {earnedPoints}/{points}
