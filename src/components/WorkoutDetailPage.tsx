@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowLeft, Edit, MessageCircle, Plus, Trash2, GripVertical, Save, TrendingUp, Target, Flame, Award, Clock, Calculator } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Edit, MessageCircle, Plus, Trash2, GripVertical, Save, TrendingUp, Target, Flame, Award, Clock, Calculator, Calendar } from 'lucide-react';
 import { Footer } from './Footer';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -7,6 +7,8 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner@2.0.3';
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { getWorkoutExercises, setWorkoutExercises, checkAndClearDailyWorkout, updateUserFareScoreOnLog, getDateInEasternTimezone } from '../userService';
+import { getAuth } from 'firebase/auth';
 
 interface Exercise {
   id: string;
@@ -41,17 +43,67 @@ interface WorkoutDetailPageProps {
 
 export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveWorkout }: WorkoutDetailPageProps) {
   const [workoutType, setWorkoutType] = useState(workoutData?.workoutType || 'Push Day 💪');
-  const [duration, setDuration] = useState(workoutData?.duration.toString() || '45');
-  const [caloriesBurned, setCaloriesBurned] = useState(workoutData?.caloriesBurned.toString() || '517');
+  const [duration, setDuration] = useState(workoutData?.duration || 0);
+  const [caloriesBurned, setCaloriesBurned] = useState(workoutData?.caloriesBurned || 0);
   const [isEditing, setIsEditing] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
-
   const [exercises, setExercises] = useState<Exercise[]>(workoutData?.exercises || []);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showTimePicker, setShowTimePicker] = useState<{id: string, type: 'start' | 'end'} | null>(null);
+
+  const auth = getAuth();
   
   // Calculate totals
   const totalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
   const totalReps = exercises.reduce((sum, ex) => sum + (ex.sets * ex.reps), 0);
   const totalVolume = exercises.reduce((sum, ex) => sum + ex.volume, 0);
+
+  // Load workout data on component mount
+  useEffect(() => {
+    loadTodayWorkout();
+    
+    // Check and clear daily workout at midnight
+    checkAndClearDailyWorkout();
+  }, []);
+
+  const loadTodayWorkout = async () => {
+    try {
+      setIsLoading(true);
+      const workoutData = await getWorkoutExercises();
+      
+      if (workoutData.workout.length > 0) {
+        const todayWorkout = workoutData.workout[0];
+        setWorkoutType(todayWorkout.day_type || 'Push Day 💪');
+        setDuration(todayWorkout.duration || 0);
+        setCaloriesBurned(todayWorkout.calories_burned || 0);
+        
+        // Transform exercises from service format to component format
+        const transformedExercises: Exercise[] = todayWorkout.exercises.map((ex: any, index: number) => ({
+          id: ex.id || `exercise-${Date.now()}-${index}`,
+          name: ex.name || 'New Exercise',
+          sets: ex.sets || 0,
+          reps: ex.reps || 0,
+          weight: ex.weight || 0,
+          volume: ex.volume || 0,
+          notes: ex.notes || '',
+          startTime: ex.startTime || undefined,
+          endTime: ex.endTime || undefined
+        }));
+        
+        setExercises(transformedExercises);
+      } else {
+        // No workout for today, start fresh
+        setExercises([]);
+        setDuration(0);
+        setCaloriesBurned(0);
+      }
+    } catch (error) {
+      console.error('Error loading workout:', error);
+      toast.error('Failed to load workout data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Progress data for chart
   const progressData = [
@@ -87,7 +139,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       weight: 0,
       volume: 0,
       notes: '',
-      startTime: new Date().toISOString(),
+      startTime: undefined,
       endTime: undefined
     };
     setExercises([...exercises, newExercise]);
@@ -113,19 +165,45 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
     }));
   };
 
-  const handleSaveWorkout = () => {
-    setIsEditing(false);
-    
-    const updatedWorkout: WorkoutData = {
-      workoutType,
-      duration: parseInt(duration) || 0,
-      caloriesBurned: parseInt(caloriesBurned) || 0,
-      exercises,
-      date: new Date().toISOString()
-    };
-    
-    onSaveWorkout(updatedWorkout);
-    toast.success('Workout saved successfully! 💪');
+  const handleSaveWorkout = async () => {
+    try {
+      setIsEditing(false);
+      
+      // Transform to service format
+      const workoutToSave = {
+        day_type: workoutType,
+        duration: duration || 0,
+        calories_burned: caloriesBurned || 0,
+        total_sets: totalSets,
+        total_reps: totalReps,
+        volume: totalVolume,
+        exercises: exercises.map(ex => ({
+          name: ex.name,
+          sets: ex.sets,
+          reps: ex.reps,
+          weight: ex.weight,
+          volume: ex.volume,
+          notes: ex.notes,
+          startTime: ex.startTime || null,
+          endTime: ex.endTime || null
+        })),
+        date: getTodayEST()
+      };
+      
+      // Save to Firestore
+      await setWorkoutExercises(workoutToSave);
+      
+      // Update FareScore for workout completion
+      const userId = auth.currentUser?.uid;
+      if (userId) {
+        await updateUserFareScoreOnLog(userId, 'logged_workout');
+      }
+      
+      toast.success('Workout saved successfully! 💪');
+    } catch (error) {
+      console.error('Error saving workout:', error);
+      toast.error('Failed to save workout');
+    }
   };
 
   const handleLoadPreset = (presetName: string) => {
@@ -140,14 +218,71 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
         weight: 0,
         volume: 0,
         notes: '',
-        startTime: new Date(baseTime.getTime() + index * 10 * 60000).toISOString(), // 10 min intervals
-        endTime: new Date(baseTime.getTime() + (index + 1) * 10 * 60000).toISOString()
+        startTime: undefined,
+        endTime: undefined
       }));
       setExercises(newExercises);
       setWorkoutType(presetName);
       setIsEditing(true);
       toast.success(`${presetName} preset loaded!`);
     }
+  };
+
+  // Set current time for exercise
+  const handleSetCurrentTime = (id: string, field: 'startTime' | 'endTime') => {
+    const currentTime = new Date().toISOString();
+    handleUpdateExercise(id, field, currentTime);
+    toast.success(`${field === 'startTime' ? 'Start' : 'End'} time set to current time!`);
+  };
+
+  // Handle custom time input
+  const handleCustomTime = (id: string, type: 'startTime' | 'endTime', timeString: string) => {
+    if (!timeString) {
+      handleUpdateExercise(id, type, undefined);
+      return;
+    }
+
+    // Parse the time string (expected format: "HH:MM" or "HH:MM AM/PM")
+    const today = new Date();
+    const [time, period] = timeString.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+
+    // Convert to 24-hour format if AM/PM is provided
+    if (period) {
+      if (period.toLowerCase() === 'pm' && hours < 12) {
+        hours += 12;
+      } else if (period.toLowerCase() === 'am' && hours === 12) {
+        hours = 0;
+      }
+    }
+
+    // Create date with today's date and the specified time
+    const customDate = new Date(today);
+    customDate.setHours(hours, minutes, 0, 0);
+
+    // Handle case where time might be for previous day (e.g., early morning workout)
+    const currentHour = today.getHours();
+    if (currentHour < 6 && hours >= 20) { // If current time is early morning but entered time is late evening
+      customDate.setDate(customDate.getDate() - 1); // Assume it was yesterday
+    }
+
+    handleUpdateExercise(id, type, customDate.toISOString());
+    setShowTimePicker(null);
+    toast.success(`${type === 'startTime' ? 'Start' : 'End'} time set to ${formatTime(customDate.toISOString())}`);
+  };
+
+  // Format time for display
+  const formatTime = (isoString: string | undefined) => {
+    if (!isoString) return '—';
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  // Get time in input format (HH:MM)
+  const getTimeForInput = (isoString: string | undefined) => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
   // Calculate calories burned based on exercises and timestamps
@@ -160,26 +295,32 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       let calculatedDuration = 0;
       let earliestStart: Date | null = null;
       let latestEnd: Date | null = null;
-      
-      exercises.forEach(ex => {
+
+      for (const ex of exercises) {
         if (ex.startTime) {
           const start = new Date(ex.startTime);
-          if (!earliestStart || start < earliestStart) {
-            earliestStart = start;
+          if (!isNaN(start.getTime())) { // ensure valid date
+            if (!earliestStart || start.getTime() < earliestStart.getTime()) {
+              earliestStart = start;
+            }
           }
         }
+
         if (ex.endTime) {
           const end = new Date(ex.endTime);
-          if (!latestEnd || end > latestEnd) {
-            latestEnd = end;
+          if (!isNaN(end.getTime())) { // ensure valid date
+            if (!latestEnd || end.getTime() > latestEnd.getTime()) {
+              latestEnd = end;
+            }
           }
         }
-      });
-      
-      if (earliestStart && latestEnd) {
-        calculatedDuration = Math.round((latestEnd.getTime() - earliestStart.getTime()) / 60000); // minutes
       }
-      
+
+      // Now TypeScript knows earliestStart and latestEnd are Date
+      if (earliestStart && latestEnd) {
+        calculatedDuration = Math.round((latestEnd.getTime() - earliestStart.getTime()) / 60000);
+      }
+            
       // Calculate calories based on:
       // 1. Total volume lifted
       // 2. Exercise type (compound vs isolation)
@@ -211,22 +352,82 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       setIsCalculating(false);
       
       toast.success(`Calculated: ${estimatedCalories} calories burned in ${calculatedDuration} minutes! 🔥`);
+      
+      // Auto-save after calculation if we have exercises
+      if (exercises.length > 0) {
+        handleSaveWorkout();
+      }
     }, 1500); // Simulate processing time
   };
 
-  // Format time for display
-  const formatTime = (isoString: string | undefined) => {
-    if (!isoString) return '—';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  // Add a function to get today's date in EST
+  const getTodayEST = (): string => {
+    return getDateInEasternTimezone();
   };
 
-  // Set current time for exercise
-  const handleSetTime = (id: string, field: 'startTime' | 'endTime') => {
-    const currentTime = new Date().toISOString();
-    handleUpdateExercise(id, field, currentTime);
-    toast.success(`${field === 'startTime' ? 'Start' : 'End'} time set!`);
+  // Time picker component
+  const TimePicker = ({ exerciseId, type, currentTime }: { exerciseId: string, type: 'start' | 'end', currentTime: string }) => {
+    const [timeValue, setTimeValue] = useState(currentTime || '');
+
+    return (
+      <div className="absolute z-10 mt-2 p-4 rounded-lg shadow-lg border transition-colors duration-300"
+           style={{ backgroundColor: 'var(--farefit-card)', borderColor: 'var(--farefit-secondary)' }}>
+        <div className="flex items-center gap-2 mb-3">
+          <Clock className="w-4 h-4" style={{ color: 'var(--farefit-primary)' }} />
+          <span className="text-sm font-medium" style={{ color: 'var(--farefit-text)' }}>
+            Set {type === 'start' ? 'Start' : 'End'} Time
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-2 mb-3">
+          <Input
+            type="time"
+            value={timeValue}
+            onChange={(e) => setTimeValue(e.target.value)}
+            className="flex-1"
+          />
+          <Button
+            onClick={() => handleSetCurrentTime(exerciseId, type === 'start' ? 'startTime' : 'endTime')}
+            size="sm"
+            style={{ backgroundColor: 'var(--farefit-primary)', color: 'white' }}
+          >
+            Now
+          </Button>
+        </div>
+        
+        <div className="flex gap-2">
+          <Button
+            onClick={() => handleCustomTime(exerciseId, type === 'start' ? 'startTime' : 'endTime', timeValue)}
+            size="sm"
+            className="flex-1"
+            style={{ backgroundColor: 'var(--farefit-accent)', color: 'white' }}
+          >
+            Set Time
+          </Button>
+          <Button
+            onClick={() => setShowTimePicker(null)}
+            size="sm"
+            variant="outline"
+            style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
   };
+
+  // Add loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--farefit-bg)' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto" style={{ borderColor: 'var(--farefit-primary)' }}></div>
+          <p className="mt-4" style={{ color: 'var(--farefit-text)' }}>Loading your workout...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)' }}>
@@ -297,7 +498,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
                 <h1 className="mb-2" style={{ color: 'var(--farefit-text)' }}>{workoutType}</h1>
               )}
               <p className="text-sm" style={{ color: 'var(--farefit-subtext)' }}>
-                Thursday, October 16, 2025
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </p>
             </div>
             
@@ -373,7 +574,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
           {isEditing && (
             <div className="mb-4 p-4 rounded-lg transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)', border: '1px solid var(--farefit-secondary)' }}>
               <p className="text-sm m-0" style={{ color: 'var(--farefit-text)' }}>
-                <strong>⏱️ How it works:</strong> Log your exercises with sets, reps, and weights. Click the clock icons to timestamp when you start and finish each exercise. When done, click <strong>"Calculate Calories"</strong> to automatically estimate calories burned and total duration based on your workout data!
+                <strong>⏱️ How it works:</strong> Log your exercises with sets, reps, and weights. Click the clock icons to set custom start and end times for each exercise. You can either set the current time or enter a custom time. When done, click <strong>"Calculate Calories"</strong> to automatically estimate calories burned and total duration based on your workout data! Your workout will be automatically saved to your 30-day history.
               </p>
             </div>
           )}
@@ -453,32 +654,50 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
                     <td className="p-3">
                       <span style={{ color: 'var(--farefit-primary)' }}>{(exercise.volume || 0).toLocaleString()}</span>
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 relative">
                       {isEditing ? (
-                        <button
-                          onClick={() => handleSetTime(exercise.id, 'startTime')}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
-                          style={{ color: 'var(--farefit-primary)' }}
-                        >
-                          <Clock className="w-3 h-3" />
-                          {formatTime(exercise.startTime)}
-                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'start' ? null : { id: exercise.id, type: 'start' })}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border"
+                            style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-primary)' }}
+                          >
+                            <Clock className="w-3 h-3" />
+                            {formatTime(exercise.startTime)}
+                          </button>
+                          {showTimePicker?.id === exercise.id && showTimePicker.type === 'start' && (
+                            <TimePicker 
+                              exerciseId={exercise.id} 
+                              type="start" 
+                              currentTime={getTimeForInput(exercise.startTime)} 
+                            />
+                          )}
+                        </div>
                       ) : (
                         <span className="text-sm" style={{ color: 'var(--farefit-text)' }}>
                           {formatTime(exercise.startTime)}
                         </span>
                       )}
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 relative">
                       {isEditing ? (
-                        <button
-                          onClick={() => handleSetTime(exercise.id, 'endTime')}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
-                          style={{ color: 'var(--farefit-accent)' }}
-                        >
-                          <Clock className="w-3 h-3" />
-                          {formatTime(exercise.endTime)}
-                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'end' ? null : { id: exercise.id, type: 'end' })}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border"
+                            style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-accent)' }}
+                          >
+                            <Clock className="w-3 h-3" />
+                            {formatTime(exercise.endTime)}
+                          </button>
+                          {showTimePicker?.id === exercise.id && showTimePicker.type === 'end' && (
+                            <TimePicker 
+                              exerciseId={exercise.id} 
+                              type="end" 
+                              currentTime={getTimeForInput(exercise.endTime)} 
+                            />
+                          )}
+                        </div>
                       ) : (
                         <span className="text-sm" style={{ color: 'var(--farefit-text)' }}>
                           {formatTime(exercise.endTime)}
@@ -590,32 +809,50 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
+                  <div className="relative">
                     <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Start Time</p>
                     {isEditing ? (
-                      <button
-                        onClick={() => handleSetTime(exercise.id, 'startTime')}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
-                        style={{ color: 'var(--farefit-primary)' }}
-                      >
-                        <Clock className="w-3 h-3" />
-                        {formatTime(exercise.startTime)}
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'start' ? null : { id: exercise.id, type: 'start' })}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border w-full justify-center"
+                          style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-primary)' }}
+                        >
+                          <Clock className="w-3 h-3" />
+                          {formatTime(exercise.startTime)}
+                        </button>
+                        {showTimePicker?.id === exercise.id && showTimePicker.type === 'start' && (
+                          <TimePicker 
+                            exerciseId={exercise.id} 
+                            type="start" 
+                            currentTime={getTimeForInput(exercise.startTime)} 
+                          />
+                        )}
+                      </div>
                     ) : (
                       <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{formatTime(exercise.startTime)}</p>
                     )}
                   </div>
-                  <div>
+                  <div className="relative">
                     <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>End Time</p>
                     {isEditing ? (
-                      <button
-                        onClick={() => handleSetTime(exercise.id, 'endTime')}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
-                        style={{ color: 'var(--farefit-accent)' }}
-                      >
-                        <Clock className="w-3 h-3" />
-                        {formatTime(exercise.endTime)}
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'end' ? null : { id: exercise.id, type: 'end' })}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border w-full justify-center"
+                          style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-accent)' }}
+                        >
+                          <Clock className="w-3 h-3" />
+                          {formatTime(exercise.endTime)}
+                        </button>
+                        {showTimePicker?.id === exercise.id && showTimePicker.type === 'end' && (
+                          <TimePicker 
+                            exerciseId={exercise.id} 
+                            type="end" 
+                            currentTime={getTimeForInput(exercise.endTime)} 
+                          />
+                        )}
+                      </div>
                     ) : (
                       <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{formatTime(exercise.endTime)}</p>
                     )}
