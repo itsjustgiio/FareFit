@@ -428,19 +428,19 @@ export default function App() {
     
     // Set demo fitness goal
     const demoGoal: GoalData = {
-      goalType: 'cut', // 👈 Changed from 'lose-weight' to match type
-      targetWeight: 70,
-      weeklyGoal: 0.5,
-      activityLevel: 'moderately-active',
-      height: 175,
-      weight: 75,
+      goalType: 'cut',
       age: 34,
-      sex: 'male',
+      weight: 75, // Current weight
+      height: 175,
+      gender: 'male', // 👈 Fixed: 'sex' -> 'gender'
+      activityLevel: 'moderately-active',
       tdee: 2450,
       targetCalories: 1950,
-      proteinTarget: 150,
-      carbsTarget: 195,
-      fatTarget: 54,
+      protein: 150, // 👈 Fixed: 'proteinTarget' -> 'protein'
+      carbs: 195,   // 👈 Fixed: 'carbsTarget' -> 'carbs' 
+      fat: 54,      // 👈 Fixed: 'fatTarget' -> 'fat'
+      fiber: 27,    // 👈 Added missing fiber property
+      // Removed: targetWeight, weeklyGoal (not in GoalData interface)
     };
     
     // Set demo logged macros (as if user has logged some meals today)
