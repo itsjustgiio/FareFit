@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, Dumbbell, Apple, Moon, Target, Sparkles, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Send, Dumbbell, Apple, Moon, Target, Sparkles, ChevronDown, TrendingUp, AlertCircle } from 'lucide-react';
 import { Footer } from './Footer';
 import { FeedbackModal } from './FeedbackModal';
+import { getGeminiService } from '../services/geminiService';
+import { analyzeWorkoutHistory, buildWorkoutContext, WorkoutAnalysis } from '../services/workoutAnalysisService';
+import { getWorkoutHistory, getUserFitnessGoals } from '../userService';
+import { getAuth } from 'firebase/auth';
 
 interface CoachAIPageProps {
   onBack: () => void;
@@ -34,13 +38,19 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // Mock user data
+  // Real user data from Firebase
+  const [workoutHistory, setWorkoutHistory] = useState<any[]>([]);
+  const [workoutAnalysis, setWorkoutAnalysis] = useState<WorkoutAnalysis | null>(null);
+  const [userGoals, setUserGoals] = useState<any>(null);
+  const [isLoadingContext, setIsLoadingContext] = useState(true);
+
+  // Mock user data (keeping for backward compatibility)
   const userProfile = {
-    todayWorkout: 'Push Day - Completed',
+    todayWorkout: workoutHistory.length > 0 ? workoutHistory[0].day_type || 'Workout Logged' : 'No workout today',
     fitnessLevel: experienceLevel,
-    currentGoal: 'Lean Bulk',
-    hasWorkedOutToday: true,
-    lastWorkoutDaysAgo: 0,
+    currentGoal: userGoals?.goal_type || 'Loading...',
+    hasWorkedOutToday: workoutAnalysis ? workoutAnalysis.daysSinceLastWorkout === 0 : false,
+    lastWorkoutDaysAgo: workoutAnalysis?.daysSinceLastWorkout || 0,
     consistencyImprovement: 12
   };
 
@@ -58,6 +68,51 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
     { icon: Moon, label: 'Recovery', prompt: 'How can I optimize my recovery?' },
     { icon: Target, label: 'Goals', prompt: 'Help me set realistic fitness goals' }
   ];
+
+  // Fetch user workout data and analysis on mount
+  useEffect(() => {
+    const fetchUserContext = async () => {
+      const auth = getAuth();
+      if (!auth.currentUser) {
+        console.log('No user logged in for Coach AI');
+        setIsLoadingContext(false);
+        return;
+      }
+
+      try {
+        console.log('📊 Fetching workout history for Coach AI...');
+
+        // Fetch workout history and user goals
+        const [workouts, goals] = await Promise.all([
+          getWorkoutHistory(auth.currentUser.uid),
+          getUserFitnessGoals(auth.currentUser.uid)
+        ]);
+
+        console.log(`✅ Loaded ${workouts.length} workouts for Coach AI`);
+
+        setWorkoutHistory(workouts);
+        setUserGoals(goals);
+
+        // Analyze workout history if available
+        if (workouts.length > 0) {
+          const analysis = analyzeWorkoutHistory(workouts);
+          setWorkoutAnalysis(analysis);
+          console.log('✅ Workout analysis complete:', {
+            totalWorkouts: analysis.totalWorkouts,
+            totalVolume: analysis.totalVolume,
+            plateaus: analysis.plateaus.length,
+            recommendations: analysis.recommendations.length
+          });
+        }
+      } catch (error) {
+        console.error('❌ Error fetching user context:', error);
+      } finally {
+        setIsLoadingContext(false);
+      }
+    };
+
+    fetchUserContext();
+  }, []);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -90,62 +145,40 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
     }
   }, [messages]);
 
-  const generateAIResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
-
-    // Context-aware responses
-    if (lowerMessage.includes('3-day') && lowerMessage.includes('plan')) {
-      if (experienceLevel === 'Beginner') {
-        return "Great choice! Here's a simple 3-day full-body plan:\n\n**Day 1 - Full Body A**\n• Squats: 3 sets of 8-10 reps\n• Bench Press: 3 sets of 8-10 reps\n• Bent Over Rows: 3 sets of 8-10 reps\n• Plank: 3 sets of 30-60 seconds\n\n**Day 2 - Rest or Light Cardio**\n\n**Day 3 - Full Body B**\n• Deadlifts: 3 sets of 6-8 reps\n• Overhead Press: 3 sets of 8-10 reps\n• Pull-ups/Lat Pulldowns: 3 sets of 8-10 reps\n• Bicycle Crunches: 3 sets of 15 reps\n\n**Day 4-5 - Rest**\n\n**Day 6 - Full Body C**\n• Lunges: 3 sets of 10 reps per leg\n• Incline Dumbbell Press: 3 sets of 10 reps\n• Cable Rows: 3 sets of 10 reps\n• Russian Twists: 3 sets of 20 reps\n\nRemember to warm up before each session and focus on proper form! 💪";
-      } else {
-        return "Perfect! Here's an intermediate/advanced 3-day full-body split:\n\n**Day 1 - Strength Focus**\n• Squats: 5x5 (heavy)\n• Bench Press: 4x6-8\n• Pendlay Rows: 4x6-8\n• Face Pulls: 3x15\n• Ab Rollouts: 3x10\n\n**Day 2 - Hypertrophy Focus**\n• Romanian Deadlifts: 4x8-10\n• Overhead Press: 4x8-10\n• Weighted Pull-ups: 4x6-8\n• Dumbbell Lateral Raises: 3x12-15\n• Hanging Leg Raises: 3x12\n\n**Day 3 - Volume Focus**\n• Front Squats: 4x10-12\n• Incline Bench: 4x10-12\n• Cable Rows: 4x10-12\n• Dumbbell Curls: 3x12\n• Tricep Dips: 3x12\n\nUse progressive overload by adding 2.5-5lbs per week or increasing reps. Track your RPE (Rate of Perceived Exertion) and aim for 7-9 on compound lifts. 🔥";
+  const generateAIResponse = async (userMessage: string): Promise<string> => {
+    try {
+      const auth = getAuth();
+      if (!auth.currentUser || !userGoals || !workoutAnalysis) {
+        // Fallback if no user data available
+        return "I'm here to help! However, I need your workout history to provide personalized advice. Start logging workouts in FareFit and I'll be able to give you specific, data-driven recommendations! 💪";
       }
-    }
 
-    if (lowerMessage.includes('bench press') && lowerMessage.includes('strength')) {
-      return "To increase your bench press strength, focus on these key strategies:\n\n**1. Progressive Overload**\nIncrease weight by 2.5-5lbs every 1-2 weeks. If you can't add weight, add 1-2 reps.\n\n**2. Frequency**\nBench 2-3x per week with varied intensities (heavy/medium/light).\n\n**3. Accessory Work**\n• Close-grip bench press (triceps)\n• Incline press (upper chest)\n• Dumbbell press (stabilizers)\n• Tricep dips\n\n**4. Form Check**\n• Retract shoulder blades\n• Arch your lower back slightly\n• Plant feet firmly\n• Bar path: straight down to mid-chest\n\n**5. Deload Week**\nEvery 4-6 weeks, reduce volume by 40% to allow recovery.\n\nWhat's your current bench weight? I can help create a specific progression plan! 💪";
-    }
+      // Build complete workout context
+      const workoutContext = buildWorkoutContext(workoutHistory, workoutAnalysis);
 
-    if (lowerMessage.includes('post-workout meal') || (lowerMessage.includes('eat') && lowerMessage.includes('workout'))) {
-      return "Great question! Post-workout nutrition is crucial for recovery and muscle growth:\n\n**Ideal Post-Workout Meal (within 2 hours):**\n\n🍗 **Protein (20-40g)**\n• Chicken breast\n• Salmon\n• Greek yogurt\n• Protein shake\n• Eggs\n\n🍚 **Carbs (40-80g)**\n• White rice\n• Sweet potato\n• Oats\n• Pasta\n• Fruit\n\n**Sample Meals:**\n1. Grilled chicken (6oz) + white rice (1 cup) + veggies\n2. Protein shake + banana + oats\n3. Salmon (5oz) + sweet potato + broccoli\n4. Greek yogurt (2 cups) + berries + granola\n\n**Pro Tip:** " + (experienceLevel === 'Beginner' 
-        ? "Don't overthink it! Just get protein and carbs within a few hours of training. Whole foods are best!" 
-        : "Optimize your post-workout window by having fast-digesting protein and high-GI carbs to spike insulin and shuttle nutrients to muscles. Consider adding 5g creatine here too.") + " 🍎";
-    }
+      console.log('🤖 Calling Coach AI with full workout history...');
 
-    if (lowerMessage.includes('sore') && (lowerMessage.includes('overtraining') || lowerMessage.includes('every day'))) {
-      return "Constant soreness can be a sign of inadequate recovery. Let's assess:\n\n**Signs of Overtraining:**\n✓ Persistent muscle soreness (3+ days)\n✓ Declining performance\n✓ Fatigue and low energy\n✓ Poor sleep quality\n✓ Increased resting heart rate\n✓ Mood changes/irritability\n\n**Recovery Strategies:**\n\n**1. Sleep** - Aim for 7-9 hours\n**2. Nutrition** - Eat at maintenance or slight surplus\n**3. Deload** - Reduce volume by 40-50% for 1 week\n**4. Active Recovery** - Light walking, stretching, yoga\n**5. Hydration** - 0.5-1oz per lb bodyweight daily\n\n**Soreness vs. Injury:**\n• DOMS (Delayed Onset Muscle Soreness) = normal, peaks 24-72hrs\n• Sharp pain = potential injury, rest immediately\n\n" + (userProfile.lastWorkoutDaysAgo === 0 
-        ? "I see you worked out today. Consider taking tomorrow as a rest or active recovery day!" 
-        : "Try implementing a deload week and see how you feel. Recovery is when growth happens! 💤");
-    }
+      // Call Gemini AI with full context
+      const geminiService = getGeminiService();
+      const response = await geminiService.getEnhancedCoachAdvice(
+        userMessage,
+        {
+          goalType: userGoals.goal_type || 'maintain',
+          age: userGoals.age || 25,
+          weight: userGoals.weight || 150,
+          workoutContext: workoutContext
+        }
+      );
 
-    if (lowerMessage.includes('progressive overload')) {
-      if (experienceLevel === 'Beginner') {
-        return "**Progressive Overload for Beginners 📈**\n\nProgressive overload means gradually increasing the stress on your muscles over time. It's the key to getting stronger!\n\n**Simple Ways to Progress:**\n\n1. **Add Weight** (easiest)\n   Example: Squatting 135lbs → 140lbs next week\n\n2. **Add Reps**\n   Example: 3 sets of 8 → 3 sets of 9 → 3 sets of 10\n\n3. **Add Sets**\n   Example: 3 sets → 4 sets\n\n**How to Apply It:**\n• Week 1: Squat 3x8 @ 135lbs\n• Week 2: Squat 3x9 @ 135lbs\n• Week 3: Squat 3x10 @ 135lbs\n• Week 4: Squat 3x8 @ 140lbs ← restart cycle\n\n**Golden Rule:** Only progress if you can do ALL reps with good form!\n\nStart tracking your workouts in FareFit to see your progress over time! 💪";
-      } else {
-        return "**Advanced Progressive Overload Strategies 📊**\n\nYou know the basics — let's dive deeper into periodization and advanced tactics:\n\n**1. Wave Loading**\nVary intensity weekly:\n• Week 1: 4x6 @ 80% 1RM\n• Week 2: 4x8 @ 75% 1RM\n• Week 3: 4x10 @ 70% 1RM\n• Week 4: Deload (50% volume)\n\n**2. RPE Progression**\nIncrease effort over weeks:\n• Week 1-2: RPE 7\n• Week 3-4: RPE 8\n• Week 5-6: RPE 9\n• Week 7: Deload\n\n**3. Volume Landmarks**\nTrack total tonnage (sets × reps × weight):\n• Aim for 10-20% volume increase every 4 weeks\n\n**4. Tempo Manipulation**\n• Increase time under tension: 3-1-1-0 → 4-1-1-0\n\n**5. Advanced Techniques**\n• Drop sets\n• Rest-pause sets\n• Cluster sets\n\nRemember: Progress isn't always linear. Respect deload weeks and listen to your body. 🔥";
-      }
+      console.log('✅ Coach AI response received');
+      return response;
+    } catch (error) {
+      console.error('❌ Error generating AI response:', error);
+      return "I apologize, but I'm having trouble connecting right now. Please try again in a moment. In the meantime, keep crushing your workouts! 💪";
     }
-
-    // Contextual responses based on user profile
-    if (lowerMessage.includes('workout') && lowerMessage.includes('today')) {
-      if (userProfile.hasWorkedOutToday) {
-        return `Nice job on your ${userProfile.todayWorkout}! 💪\n\nSince you've already trained today, let's focus on recovery:\n\n**Post-Workout Checklist:**\n✓ Protein shake or meal within 2 hours\n✓ Hydrate (16-24oz water)\n✓ Light stretching or foam rolling\n✓ Get 7-9 hours of sleep tonight\n\nWant me to review form tips for your next push workout or plan tomorrow's session?`;
-      } else {
-        return "I noticed you haven't logged a workout today. No worries! Let's plan a great session:\n\n**What type of workout interests you today?**\n• Push (Chest, Shoulders, Triceps)\n• Pull (Back, Biceps)\n• Legs\n• Full Body\n• Cardio/Conditioning\n\nLet me know and I'll build you a complete workout! 🔥";
-      }
-    }
-
-    if (lowerMessage.includes('meal') || lowerMessage.includes('eat today')) {
-      return `Based on your current goal (${userProfile.currentGoal}), here are 3 meal ideas:\n\n**Option 1: High Protein Bowl**\n• 6oz grilled chicken\n• 1 cup quinoa\n• Roasted vegetables\n• Avocado\n≈ 650 cal | 50g protein\n\n**Option 2: Power Breakfast**\n• 4 whole eggs scrambled\n• 2 slices whole grain toast\n• Greek yogurt with berries\n≈ 580 cal | 40g protein\n\n**Option 3: Post-Workout Fuel**\n• 8oz salmon\n• Sweet potato (large)\n• Steamed broccoli\n• Olive oil drizzle\n≈ 720 cal | 55g protein\n\n` + (userProfile.currentGoal === 'Lean Bulk' 
-        ? "For lean bulk, aim for a 200-300 calorie surplus with high protein! 💪" 
-        : "These meals support your fitness goals while keeping you satisfied! 🍎");
-    }
-
-    // Default response
-    return "That's a great question! I'm here to help with:\n\n• Workout programming and planning\n• Strength and muscle building advice\n• Nutrition and meal planning\n• Recovery and injury prevention\n• Form checks and technique tips\n• Motivation and accountability\n\nCould you provide more details about what you'd like help with? The more specific you are, the better I can assist! 💪";
   };
 
-  const handleSendMessage = (messageText?: string) => {
+  const handleSendMessage = async (messageText?: string) => {
     const textToSend = messageText || inputValue.trim();
     if (!textToSend) return;
 
@@ -161,18 +194,30 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate AI thinking and response
-    setTimeout(() => {
+    // Get AI response
+    try {
+      const aiText = await generateAIResponse(textToSend);
+
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: generateAIResponse(textToSend),
+        text: aiText,
         sender: 'ai',
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiResponse]);
+    } catch (error) {
+      console.error('Error in handleSendMessage:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "I apologize, but I'm having trouble responding right now. Please try again! 💪",
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1000 + Math.random() * 1000); // Random delay between 1-2 seconds
+    }
   };
 
   const handleExampleClick = (question: string) => {
@@ -183,7 +228,7 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
     handleSendMessage(prompt);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -289,6 +334,82 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
             </div>
           </div>
         </div>
+
+        {/* Workout Insights Panel */}
+        {workoutAnalysis && workoutAnalysis.totalWorkouts > 0 && (
+          <div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm flex-shrink-0">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="w-5 h-5" style={{ color: '#1C7C54' }} />
+              <h3 className="text-sm font-semibold" style={{ color: '#102A43' }}>
+                Workout Insights
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+              <div>
+                <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>Total Workouts</p>
+                <p className="text-lg font-bold" style={{ color: '#1C7C54' }}>
+                  {workoutAnalysis.totalWorkouts}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>Total Volume</p>
+                <p className="text-lg font-bold" style={{ color: '#1C7C54' }}>
+                  {(workoutAnalysis.totalVolume / 1000).toFixed(1)}k lbs
+                </p>
+              </div>
+              <div>
+                <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>Avg Duration</p>
+                <p className="text-lg font-bold" style={{ color: '#1C7C54' }}>
+                  {workoutAnalysis.averageDuration} min
+                </p>
+              </div>
+              <div>
+                <p className="text-xs mb-1" style={{ color: '#102A43', opacity: 0.6 }}>Last Workout</p>
+                <p className="text-lg font-bold" style={{ color: workoutAnalysis.daysSinceLastWorkout > 3 ? '#FFB6B9' : '#1C7C54' }}>
+                  {workoutAnalysis.daysSinceLastWorkout === 0 ? 'Today' : `${workoutAnalysis.daysSinceLastWorkout}d ago`}
+                </p>
+              </div>
+            </div>
+
+            {/* Plateaus Warning */}
+            {workoutAnalysis.plateaus.length > 0 && (
+              <div className="rounded-lg p-3 mb-3" style={{ backgroundColor: '#FFF4E6', borderLeft: '3px solid #FFB6B9' }}>
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#FFB6B9' }} />
+                  <div>
+                    <p className="text-xs font-semibold mb-1" style={{ color: '#102A43' }}>
+                      Plateaus Detected ({workoutAnalysis.plateaus.length})
+                    </p>
+                    <div className="space-y-1">
+                      {workoutAnalysis.plateaus.slice(0, 2).map((plateau, idx) => (
+                        <p key={idx} className="text-xs" style={{ color: '#102A43', opacity: 0.8 }}>
+                          • {plateau.exercise}: {plateau.suggestion}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {workoutAnalysis.recommendations.length > 0 && (
+              <div className="rounded-lg p-3" style={{ backgroundColor: '#E8F4F2' }}>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#1C7C54' }}>
+                  💡 Recommendations
+                </p>
+                <div className="space-y-1">
+                  {workoutAnalysis.recommendations.slice(0, 2).map((rec, idx) => (
+                    <p key={idx} className="text-xs" style={{ color: '#102A43', opacity: 0.8 }}>
+                      • {rec}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Example Questions */}
         <div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm flex-shrink-0">
@@ -399,7 +520,7 @@ export function CoachAIPage({ onBack, onNavigate, onFeedbackClick }: CoachAIPage
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 placeholder="Ask me anything..."
                 className="flex-1 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border outline-none transition-all focus:border-opacity-100 text-sm sm:text-base"
                 style={{

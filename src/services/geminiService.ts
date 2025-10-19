@@ -40,7 +40,9 @@ class GeminiService {
    */
   async chat(messages: GeminiMessage[], model: string = 'gemini-2.5-flash'): Promise<string> {
     try {
-      const requestUrl = `${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`;
+      // Use v1beta for experimental models, v1 for stable models
+      const apiVersion = model.includes('-exp') ? 'v1beta' : 'v1';
+      const requestUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${this.apiKey}`;
       const requestBody = {
         contents: messages,
         generationConfig: {
@@ -54,9 +56,10 @@ class GeminiService {
       console.log('🤖 Gemini API Request:', {
         url: requestUrl.replace(this.apiKey, '***API_KEY***'),
         model,
+        apiVersion,
         messageCount: messages.length,
-        firstMessagePreview: 'text' in (messages[0]?.parts[0] || {}) ? 
-          (messages[0].parts[0] as GeminiTextPart).text.substring(0, 200) + '...' : 
+        firstMessagePreview: 'text' in (messages[0]?.parts[0] || {}) ?
+          (messages[0].parts[0] as GeminiTextPart).text.substring(0, 200) + '...' :
           '[Image + Text]'
       });
 
@@ -194,6 +197,58 @@ Provide specific, encouraging feedback and practical exercise advice.`;
     ];
 
     return this.chat(messages);
+  }
+
+  /**
+   * 💪 Enhanced Coach AI - With full workout history and analysis
+   */
+  async getEnhancedCoachAdvice(
+    userMessage: string,
+    userContext: {
+      goalType: 'cut' | 'bulk' | 'maintain';
+      age: number;
+      weight: number;
+      workoutContext: string; // Pre-formatted workout history and analysis
+    }
+  ): Promise<string> {
+    const systemPrompt = `You are Coach AI, an expert personal trainer and strength coach in the FareFit app.
+
+**Your Role:**
+- Analyze workout performance and provide data-driven feedback
+- Detect plateaus and suggest progressive overload strategies
+- Recommend exercise variations and programming adjustments
+- Motivate and encourage consistent training
+- Provide form cues and injury prevention tips
+
+**User's Profile:**
+- Goal: ${userContext.goalType}
+- Age: ${userContext.age}
+- Weight: ${userContext.weight}lbs
+
+**Complete Workout History & Analysis:**
+${userContext.workoutContext}
+
+**Instructions:**
+1. Reference specific exercises, weights, and reps from their history
+2. If they mention an exercise they've done before, compare to their previous performance
+3. For plateaus, suggest specific weight/rep adjustments or exercise variations
+4. If someone did high reps (15+) with heavy weight, suggest going heavier with lower reps
+5. If someone hasn't trained in a while, acknowledge it and provide comeback strategy
+6. Always be specific with numbers (e.g., "Try 155lbs for 8 reps instead of 145lbs for 20 reps")
+7. Keep responses conversational, motivational, and actionable
+8. Use emojis sparingly for emphasis
+
+**Examples:**
+- "I see you benched 145lbs for 20 reps - that's solid endurance! But you're ready for more weight. Try 165lbs for 8-10 reps to build pure strength."
+- "Your squat has been stuck at 185lbs for 3 workouts. Let's break through! Try 190lbs for 5 reps, or do a deload week at 155lbs for 12 reps."
+- "Great leg day! Your volume is up 25% from last week. Keep this intensity but watch for overtraining signals."`;
+
+    const messages: GeminiMessage[] = [
+      { role: 'user', parts: [{ text: systemPrompt }] },
+      { role: 'user', parts: [{ text: userMessage }] },
+    ];
+
+    return this.chat(messages, 'gemini-2.0-flash-exp');
   }
 
   /**
