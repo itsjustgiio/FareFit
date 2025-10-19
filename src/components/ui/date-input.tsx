@@ -25,6 +25,7 @@ export function DateInput({
   const [day, setDay] = useState('');
   const [year, setYear] = useState('');
   const [focused, setFocused] = useState<'month' | 'day' | 'year' | null>(null);
+  const [inputMode, setInputMode] = useState<'type' | 'dropdown'>('type');
   
   const monthRef = useRef<HTMLInputElement>(null);
   const dayRef = useRef<HTMLInputElement>(null);
@@ -163,70 +164,207 @@ export function DateInput({
     }
   };
 
+  // Generate dropdown options
+  const monthOptions = [
+    { value: '', label: 'Month' },
+    { value: '01', label: 'January' },
+    { value: '02', label: 'February' },
+    { value: '03', label: 'March' },
+    { value: '04', label: 'April' },
+    { value: '05', label: 'May' },
+    { value: '06', label: 'June' },
+    { value: '07', label: 'July' },
+    { value: '08', label: 'August' },
+    { value: '09', label: 'September' },
+    { value: '10', label: 'October' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'December' }
+  ];
+
+  const dayOptions = [
+    { value: '', label: 'Day' },
+    ...Array.from({ length: 31 }, (_, i) => ({
+      value: (i + 1).toString().padStart(2, '0'),
+      label: (i + 1).toString()
+    }))
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const yearOptions = [
+    { value: '', label: 'Year' },
+    ...Array.from({ length: 120 }, (_, i) => {
+      const year = currentYear - i;
+      return { value: year.toString(), label: year.toString() };
+    })
+  ];
+
   return (
-    <div className={`inline-flex items-center justify-center gap-4 p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-white/20 shadow-lg ${className}`}>
-      {/* Month */}
-      <div className="relative">
-        <input
-          ref={monthRef}
-          type="text"
-          value={month}
-          onChange={(e) => handleMonthChange(e.target.value)}
-          onKeyDown={(e) => handleKeyDown(e, 'month')}
-          onFocus={() => setFocused('month')}
-          onBlur={() => setFocused(null)}
-          placeholder="MM"
-          className={`w-16 h-16 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all duration-300 bg-white/70 backdrop-blur-sm ${
-            focused === 'month' 
-              ? 'border-[#A8E6CF] shadow-lg scale-105 bg-white' 
-              : 'border-gray-200 hover:border-[#A8E6CF] hover:shadow-md'
+    <div className={`flex flex-col items-center gap-4 ${className}`}>
+      {/* Mode Toggle */}
+      <div className="inline-flex items-center bg-white rounded-lg p-1 shadow-sm border border-gray-200 mb-3">
+        <button
+          onClick={() => setInputMode('type')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            inputMode === 'type' 
+              ? 'bg-[#A8E6CF] text-[#102A43] shadow-sm' 
+              : 'text-gray-600 hover:text-[#102A43]'
           }`}
-          style={{ color: '#102A43' }}
-          maxLength={2}
-        />
+        >
+          Type
+        </button>
+        <button
+          onClick={() => setInputMode('dropdown')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            inputMode === 'dropdown' 
+              ? 'bg-[#A8E6CF] text-[#102A43] shadow-sm' 
+              : 'text-gray-600 hover:text-[#102A43]'
+          }`}
+        >
+          Select
+        </button>
       </div>
 
-      {/* Day */}
-      <div className="relative">
-        <input
-          ref={dayRef}
-          type="text"
-          value={day}
-          onChange={(e) => handleDayChange(e.target.value)}
-          onKeyDown={(e) => handleKeyDown(e, 'day')}
-          onFocus={() => setFocused('day')}
-          onBlur={() => setFocused(null)}
-          placeholder="DD"
-          className={`w-16 h-16 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all duration-300 bg-white/70 backdrop-blur-sm ${
-            focused === 'day' 
-              ? 'border-[#A8E6CF] shadow-lg scale-105 bg-white' 
-              : 'border-gray-200 hover:border-[#A8E6CF] hover:shadow-md'
-          }`}
-          style={{ color: '#102A43' }}
-          maxLength={2}
-        />
-      </div>
+      {inputMode === 'type' ? (
+        /* Manual Input Mode */
+        <div className="inline-flex items-center justify-center gap-2 p-4 rounded-2xl bg-white/50 backdrop-blur-sm border border-white/20 shadow-lg">
+          {/* Month */}
+          <div className="relative">
+            <input
+              ref={monthRef}
+              type="text"
+              value={month}
+              onChange={(e) => handleMonthChange(e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, 'month')}
+              onFocus={() => setFocused('month')}
+              onBlur={() => setFocused(null)}
+              placeholder="MM"
+              className={`w-14 h-12 text-center text-lg font-bold rounded-lg border-2 outline-none transition-all duration-300 bg-white ${
+                focused === 'month' 
+                  ? 'border-[#A8E6CF] shadow-lg scale-105' 
+                  : 'border-gray-200 hover:border-[#A8E6CF] hover:shadow-md'
+              }`}
+              style={{ color: '#102A43' }}
+              maxLength={2}
+            />
+          </div>
 
-      {/* Year */}
-      <div className="relative">
-        <input
-          ref={yearRef}
-          type="text"
-          value={year}
-          onChange={(e) => handleYearChange(e.target.value)}
-          onKeyDown={(e) => handleKeyDown(e, 'year')}
-          onFocus={() => setFocused('year')}
-          onBlur={() => setFocused(null)}
-          placeholder="YYYY"
-          className={`w-20 h-16 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all duration-300 bg-white/70 backdrop-blur-sm ${
-            focused === 'year' 
-              ? 'border-[#A8E6CF] shadow-lg scale-105 bg-white' 
-              : 'border-gray-200 hover:border-[#A8E6CF] hover:shadow-md'
-          }`}
-          style={{ color: '#102A43' }}
-          maxLength={4}
-        />
-      </div>
+          <span className="text-lg font-medium" style={{ color: '#102A43', opacity: 0.5 }}>/</span>
+
+          {/* Day */}
+          <div className="relative">
+            <input
+              ref={dayRef}
+              type="text"
+              value={day}
+              onChange={(e) => handleDayChange(e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, 'day')}
+              onFocus={() => setFocused('day')}
+              onBlur={() => setFocused(null)}
+              placeholder="DD"
+              className={`w-14 h-12 text-center text-lg font-bold rounded-lg border-2 outline-none transition-all duration-300 bg-white ${
+                focused === 'day' 
+                  ? 'border-[#A8E6CF] shadow-lg scale-105' 
+                  : 'border-gray-200 hover:border-[#A8E6CF] hover:shadow-md'
+              }`}
+              style={{ color: '#102A43' }}
+              maxLength={2}
+            />
+          </div>
+
+          <span className="text-lg font-medium" style={{ color: '#102A43', opacity: 0.5 }}>/</span>
+
+          {/* Year */}
+          <div className="relative">
+            <input
+              ref={yearRef}
+              type="text"
+              value={year}
+              onChange={(e) => handleYearChange(e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, 'year')}
+              onFocus={() => setFocused('year')}
+              onBlur={() => setFocused(null)}
+              placeholder="YYYY"
+              className={`w-20 h-12 text-center text-lg font-bold rounded-lg border-2 outline-none transition-all duration-300 bg-white ${
+                focused === 'year' 
+                  ? 'border-[#A8E6CF] shadow-lg scale-105' 
+                  : 'border-gray-200 hover:border-[#A8E6CF] hover:shadow-md'
+              }`}
+              style={{ color: '#102A43' }}
+              maxLength={4}
+            />
+          </div>
+        </div>
+      ) : (
+        /* Dropdown Mode */
+        <div className="inline-flex items-center justify-center gap-2 p-4 rounded-2xl bg-white/50 backdrop-blur-sm border border-white/20 shadow-lg">
+          {/* Month Dropdown */}
+          <div className="relative">
+            <select
+              value={month}
+              onChange={(e) => {
+                setMonth(e.target.value);
+                validateAndUpdate(e.target.value, day, year);
+              }}
+              className="w-32 h-12 text-sm font-medium rounded-lg border-2 outline-none transition-all duration-300 bg-white appearance-none cursor-pointer hover:border-[#A8E6CF] hover:shadow-md pl-3 pr-8"
+              style={{ 
+                color: '#102A43',
+                borderColor: '#A8E6CF'
+              }}
+            >
+              {monthOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+          </div>
+
+          {/* Day Dropdown */}
+          <div className="relative">
+            <select
+              value={day}
+              onChange={(e) => {
+                setDay(e.target.value);
+                validateAndUpdate(month, e.target.value, year);
+              }}
+              className="w-16 h-12 text-sm font-medium rounded-lg border-2 outline-none transition-all duration-300 bg-white cursor-pointer hover:border-[#A8E6CF] hover:shadow-md pl-3 pr-2"
+              style={{ 
+                color: '#102A43',
+                borderColor: '#A8E6CF'
+              }}
+            >
+              {dayOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Year Dropdown */}
+          <div className="relative">
+            <select
+              value={year}
+              onChange={(e) => {
+                setYear(e.target.value);
+                validateAndUpdate(month, day, e.target.value);
+              }}
+              className="w-20 h-12 text-sm font-medium rounded-lg border-2 outline-none transition-all duration-300 bg-white appearance-none cursor-pointer hover:border-[#A8E6CF] hover:shadow-md pl-3 pr-6"
+              style={{ 
+                color: '#102A43',
+                borderColor: '#A8E6CF'
+              }}
+            >
+              {yearOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

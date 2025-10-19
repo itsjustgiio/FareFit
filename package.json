@@ -62,6 +62,7 @@
             "build": "vite build",
             "preview": "vite preview",
             "view-meals": "tsx scripts/viewMeals.ts",
+            "view-user": "tsx scripts/viewUserProfile.ts",
             "list-users": "tsx scripts/listUsers.ts",
             "test-sanitization": "tsx scripts/testSanitization.ts"
       }
