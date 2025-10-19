@@ -114,14 +114,14 @@ Cardio
             <div className="flex flex-col sm:flex-row gap-3">
               <button 
                 onClick={onViewWorkout || (() => setIsEditorOpen(true))}
-                className="px-6 py-3 rounded-md text-white transition-all hover:opacity-90 hover:-translate-y-0.5 active:translate-y-0"
+                className="px-6 py-3 rounded-md text-white transition-all hover:opacity-90 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
                 style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', backdropFilter: 'blur(4px)' }}
               >
                 View Workout
               </button>
               <button 
                 onClick={onCoachAIClick}
-                className="px-6 py-3 rounded-md text-white transition-all hover:opacity-90 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-md"
+                className="px-6 py-3 rounded-md text-white transition-all hover:opacity-90 hover:-translate-y-0.5 active:translate-y-0 hover:shadow-md cursor-pointer"
                 style={{ backgroundColor: 'var(--farefit-accent)' }}
               >
                 Ask Coach AI

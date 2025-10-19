@@ -29,7 +29,8 @@ export function ProgressCard({ onClick }: ProgressCardProps) {
         style={{ backgroundColor: '#1C7C54' }}
         whileHover={{ 
           y: -2,
-          boxShadow: '0 10px 25px rgba(28, 124, 84, 0.3)'
+          boxShadow: '0 10px 25px rgba(28, 124, 84, 0.3)',
+          cursor: 'pointer'
         }}
         whileTap={{ scale: 0.98 }}
         transition={{ type: 'spring', stiffness: 400, damping: 17 }}

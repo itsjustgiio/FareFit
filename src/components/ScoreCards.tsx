@@ -102,7 +102,7 @@ useEffect(() => {
       {/* FareScore Card */}
       <motion.button
         onClick={onFareScoreClick}
-        className="relative overflow-hidden rounded-xl p-6 text-left transition-all hover:shadow-lg active:scale-[0.98]"
+        className="relative overflow-hidden rounded-xl p-6 text-left transition-all hover:shadow-lg active:scale-[0.98] cursor-pointer"
         style={{ 
           backgroundColor: 'var(--bg-primary)',
           border: '2px solid var(--border-color)',
@@ -206,7 +206,7 @@ useEffect(() => {
         className="relative overflow-hidden rounded-xl p-6"
         style={{ 
           backgroundColor: 'var(--bg-primary)',
-          border: '2px solid var(--border-color)',
+          border: '2px solid oklch(59.6% 0.145 163.225)',
         }}
       >
         <div className="flex items-start justify-between mb-4">

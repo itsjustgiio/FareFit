@@ -148,14 +148,15 @@ export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, planSumm
           <div className="flex flex-col sm:flex-row gap-3">
             <button 
               onClick={onLogMealClick}
-              className="px-6 py-3 rounded-md text-white transition-opacity hover:opacity-90"
+              className="px-6 py-3 rounded-md text-white transition-opacity hover:opacity-90 cursor-pointer"
               style={{ backgroundColor: 'var(--farefit-primary)' }}
             >
               Log Meal
             </button>
+
             <button 
               onClick={onFoodAIClick}
-              className="px-6 py-3 rounded-md text-white transition-opacity hover:opacity-90"
+              className="px-6 py-3 rounded-md text-white transition-opacity hover:opacity-90 cursor-pointer"
               style={{ backgroundColor: 'var(--farefit-accent)' }}
             >
               Ask Food AI

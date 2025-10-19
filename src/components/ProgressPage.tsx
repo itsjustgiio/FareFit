@@ -649,13 +649,13 @@ export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPa
               <div>
                 <div className="flex items-center justify-between text-xs mb-2" style={{ color: 'var(--farefit-subtext)' }}>
                   <span>Mystery</span>
-                  <span>{earnedMystery}/{totalMystery} ({Math.round(mysteryPercentage)}%)</span>
+                  <span>{0}/{totalMystery} ({Math.round(mysteryPercentage)}%)</span>
                 </div>
                 <div className="w-full h-2 rounded-full overflow-hidden transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)' }}>
                   <div 
                     className="h-full transition-all duration-500 rounded-full"
                     style={{ 
-                      width: `${mysteryPercentage}%`,
+                      width: `${0}%`,
                       background: 'linear-gradient(90deg, #6C5CE7 0%, #A29BFE 100%)'
                     }}
                   />
