@@ -1180,7 +1180,7 @@ export const recalculateWeeklyFacts = async (userId: string) => {
       
       // Only count meals from current week
       if (mealDate >= weekStart && mealDate <= weekEnd) {
-        const dayOfWeek = getDayOfWeekFromDate(meal.meal_date);
+        const dayOfWeek = getDayOfWeekFromDate(meal.meal_date) as keyof typeof daysConsumed;
         daysConsumed[dayOfWeek] += meal.calories || 0;
       }
     });
@@ -1211,9 +1211,10 @@ export const recalculateWeeklyFacts = async (userId: string) => {
     }
 
     // Calculate net for each day
-    const daysNet: any = {};
-    Object.keys(daysConsumed).forEach(day => {
-      daysNet[day] = daysConsumed[day] - daysBurned[day];
+    const daysNet: { [key: string]: number } = {};
+    Object.keys(daysConsumed).forEach((day: string) => {
+      const dayKey = day as keyof typeof daysConsumed;
+      daysNet[day] = daysConsumed[dayKey] - daysBurned[dayKey];
     });
 
     const netCalories = totalCals - totalBurned;
@@ -1279,7 +1280,7 @@ export const updateDailyMetrics = async (userId: string) => {
     }
 
     // Calculate totals from today's meals
-    const todayTotals = todayMeals.reduce((acc, meal) => ({
+    const todayTotals = todayMeals.reduce((acc: any, meal: any) => ({
       calories: acc.calories + (meal.calories || 0),
       protein: acc.protein + (meal.protein || 0),
       carbs: acc.carbs + (meal.carbs || 0),
