@@ -12,7 +12,9 @@ import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updat
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
 import { BarcodeScannerCamera } from './BarcodeScannerCamera';
+import { NutritionLabelCamera } from './NutritionLabelCamera';
 import { fetchProductByBarcode, isValidBarcode } from '../services/barcodeScannerService';
+import { getGeminiService } from '../services/geminiService';
 
 interface FoodItem {
   id: string;
@@ -1049,6 +1051,8 @@ function BarcodeScanTab({ onFoodDetected }: any) {
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState('');
   const [recentlyScanned, setRecentlyScanned] = useState<any[]>([]);
+  const [showNutritionScanner, setShowNutritionScanner] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   // Fetch barcode history on mount
   useEffect(() => {
@@ -1184,6 +1188,44 @@ function BarcodeScanTab({ onFoodDetected }: any) {
     toast.success(`✓ Added: ${product.product_name}!`);
   };
 
+  const handleNutritionLabelPhoto = async (imageBase64: string) => {
+    console.log('📸 Processing nutrition label photo...');
+    setShowNutritionScanner(false);
+    setIsProcessingImage(true);
+
+    try {
+      const gemini = getGeminiService();
+      const nutritionData = await gemini.extractNutritionFromImage(imageBase64);
+
+      console.log('✅ Extracted nutrition data:', nutritionData);
+
+      const formattedData = {
+        name: nutritionData.productName || 'Scanned Product',
+        brandName: nutritionData.brandName,
+        servingSize: nutritionData.servingSize,
+        amountConsumed: 1,
+        baseCalories: nutritionData.calories,
+        baseProtein: nutritionData.protein,
+        baseCarbs: nutritionData.carbs,
+        baseFat: nutritionData.fat,
+        baseFiber: nutritionData.fiber,
+        calories: nutritionData.calories,
+        protein: nutritionData.protein,
+        carbs: nutritionData.carbs,
+        fat: nutritionData.fat,
+        fiber: nutritionData.fiber,
+      };
+
+      setScannedData(formattedData);
+      toast.success('✓ Nutrition label scanned successfully!');
+    } catch (error) {
+      console.error('❌ Error processing nutrition label:', error);
+      toast.error('Failed to read nutrition label. Please try again with better lighting.');
+    } finally {
+      setIsProcessingImage(false);
+    }
+  };
+
   return (
     <>
       {/* Barcode Scanner Camera Overlay */}
@@ -1193,9 +1235,33 @@ function BarcodeScanTab({ onFoodDetected }: any) {
         onClose={handleCloseScan}
       />
 
+      {/* Nutrition Label Camera Overlay */}
+      <NutritionLabelCamera
+        isActive={showNutritionScanner}
+        onPhotoCapture={handleNutritionLabelPhoto}
+        onClose={() => setShowNutritionScanner(false)}
+      />
+
       {/* Main Content */}
       <div className="bg-white rounded-xl p-8 shadow-sm">
-        {isFetching ? (
+        {isProcessingImage ? (
+          // Processing Nutrition Label State
+          <div className="text-center py-12">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+              className="w-16 h-16 mx-auto mb-4"
+            >
+              <Sparkles className="w-16 h-16" style={{ color: '#1C7C54' }} />
+            </motion.div>
+            <h3 className="mb-2" style={{ color: '#102A43' }}>
+              Reading Nutrition Label...
+            </h3>
+            <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+              Analyzing your photo with AI
+            </p>
+          </div>
+        ) : isFetching ? (
           // Fetching State
           <div className="text-center py-12">
             <motion.div
@@ -1230,14 +1296,14 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                 Point your camera at the barcode on the package
               </p>
 
-              <div className="flex gap-3 justify-center mb-6">
+              <div className="flex gap-3 justify-center mb-6 flex-wrap">
                 <button
                   onClick={handleStartScan}
                   className="px-8 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
                   style={{ backgroundColor: '#1C7C54' }}
                 >
                   <Camera className="w-5 h-5" />
-                  Start Scanning
+                  Scan Barcode
                 </button>
                 <button
                   onClick={() => setManualMode(!manualMode)}
@@ -1245,7 +1311,15 @@ function BarcodeScanTab({ onFoodDetected }: any) {
                   style={{ borderColor: '#A8E6CF', color: '#1C7C54' }}
                 >
                   <Keyboard className="w-5 h-5" />
-                  Manual Entry
+                  Type Barcode
+                </button>
+                <button
+                  onClick={() => setShowNutritionScanner(true)}
+                  className="px-6 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+                  style={{ borderColor: '#A8E6CF', color: '#1C7C54' }}
+                >
+                  <Camera className="w-5 h-5" />
+                  Scan Label
                 </button>
               </div>
 
@@ -1292,15 +1366,13 @@ function BarcodeScanTab({ onFoodDetected }: any) {
 
               <div className="mt-8 p-4 rounded-lg text-left" style={{ backgroundColor: '#E8F4F2' }}>
                 <p className="text-sm mb-2" style={{ color: '#102A43' }}>
-                  <strong>📱 Tips for better scanning:</strong>
+                  <strong>📱 Three ways to add products:</strong>
                 </p>
                 <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
-                  <li>• Hold camera steady 4-8 inches from barcode</li>
-                  <li>• Ensure good lighting (avoid shadows/glare)</li>
-                  <li>• Keep barcode flat and fully visible</li>
-                  <li>• Try different angles if not detecting</li>
-                  <li>• Works best with UPC & EAN barcodes</li>
-                  <li>• Database: 1.3M+ products with nutrition data</li>
+                  <li>• <strong>Scan Barcode:</strong> Point camera at UPC/EAN barcode (1.3M+ products)</li>
+                  <li>• <strong>Type Barcode:</strong> Manually enter 8-14 digit barcode number</li>
+                  <li>• <strong>Scan Label:</strong> Take a photo of nutrition facts (AI-powered)</li>
+                  <li>• <strong>Recent Products:</strong> Quick-add from your scan history below</li>
                 </ul>
               </div>
             </div>
