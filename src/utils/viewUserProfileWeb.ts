@@ -5,6 +5,7 @@
 
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { getUserFareScore } from "../userService";
 
 // Use the existing Firebase instance from your app
 const db = getFirestore();
@@ -121,10 +122,23 @@ export async function viewUserProfile(userId?: string) {
     console.log("🌍 Language:", prefs?.language ?? "—");
     console.groupEnd();
 
+    // Get FareScore data
+    const fareScore = await getUserFareScore(targetUserId);
+    console.group("\n💯 FARE SCORE");
+    if (fareScore) {
+      console.log("📊 Score:", fareScore.score, `(${fareScore.tier || 'No tier set'})`);
+      console.log("🔥 Streak Days:", fareScore.streakDays || 0);
+      console.log("🍽️ Meals Logged:", fareScore.mealsLogged || 0);
+      console.log("🏋️ Workouts Completed:", fareScore.workoutsCompleted || 0);
+    } else {
+      console.log("❌ No FareScore data found");
+    }
+    console.groupEnd();
+
     console.log(`\n✅ Profile data retrieval complete`);
     console.log(`\n💡 Raw data objects available in Network tab → Firebase calls\n`);
 
-    return { profile, fitness, prefs };
+    return { profile, fitness, prefs, fareScore };
 
   } catch (error) {
     console.error('❌ Error:', error);

@@ -5,6 +5,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import { getUserFareScore } from '../src/userService';
 
 // Firebase config - using environment variables
 const firebaseConfig = {
@@ -123,6 +124,19 @@ async function viewUserProfile(userId: string) {
       console.log(`📅 Weekly Check-ins: ${prefsData?.weeklyCheckins ? 'Enabled' : 'Disabled'}`);
     } else {
       console.log(`❌ No notification preferences found`);
+    }
+
+    // Get FareScore data
+    const fareScore = await getUserFareScore(userId);
+    console.log(`\n💯 FARE SCORE:`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    if (fareScore) {
+      console.log(`📊 Score: ${fareScore.score} (${fareScore.tier || 'No tier set'})`);
+      console.log(`🔥 Streak Days: ${fareScore.streakDays || 0}`);
+      console.log(`🍽️ Meals Logged: ${fareScore.mealsLogged || 0}`);
+      console.log(`🏋️ Workouts Completed: ${fareScore.workoutsCompleted || 0}`);
+    } else {
+      console.log(`❌ No FareScore data found`);
     }
 
     console.log(`\n✅ Profile data retrieval complete\n`);
