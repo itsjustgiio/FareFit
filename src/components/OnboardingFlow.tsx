@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Star, Calendar, Ruler, Weight, Bell, CheckCircle2 } from 'lucide-react';
 import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
+import { DateInput } from './ui/date-input';
 import logoImage from 'figma:asset/77bf03e5d71328d3253fb9c4f7bef47edf94924a.png';
 import { updateFitnessGoals } from '../userService';
 import { getAuth } from 'firebase/auth';
@@ -369,26 +370,34 @@ function BirthdayScreen({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isValid, setIsValid] = useState(false);
   const auth = getAuth();
 
-  const handleBirthdaySelect = async (birthday: string) => {
+  const handleDateChange = async (birthday: string) => {
+    onChange(birthday); // update local state
+    
     // Validate the birth date
     const validationError = validateBirthDate(birthday);
-    setError(validationError);
-    
     if (validationError) {
-      // Don't proceed if validation fails
+      setError(validationError);
+      setIsValid(false);
       return;
     }
 
-    onChange(birthday); // update local state
+    setError(null);
+    setIsValid(true);
     setLoading(true);
 
-    const birthDate = new Date(birthday);
+    // Parse date safely to avoid timezone issues
+    const [yearStr, monthStr, dayStr] = birthday.split('-');
+    const birthYear = parseInt(yearStr);
+    const birthMonth = parseInt(monthStr);
+    const birthDay = parseInt(dayStr);
+    
     const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    let age = today.getFullYear() - birthYear;
+    const monthDiff = (today.getMonth() + 1) - birthMonth;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDay)) {
       age--;
     }
 
@@ -402,17 +411,24 @@ function BirthdayScreen({
         console.log(`Age set to ${age} for user ${user.uid}`);
       }
 
-      setTimeout(onContinue, 300); // move to next onboarding step
+      setTimeout(onContinue, 800); // move to next onboarding step
     } catch (error) {
       console.error("Error updating birthday:", error);
       setError("Failed to save birth date. Please try again.");
+      setIsValid(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // Check if current value is valid
-  const isValidDate = value && !validateBirthDate(value);
+  const handleValidationChange = (valid: boolean, validationError?: string) => {
+    setIsValid(valid);
+    if (validationError) {
+      setError(validationError);
+    } else {
+      setError(null);
+    }
+  };
 
   return (
     <motion.div
@@ -432,38 +448,72 @@ function BirthdayScreen({
         You must be at least 13 years old to use this app
       </p>
 
-      <div className="flex flex-col items-center space-y-4">
-        <input
-          id="birthdate-input"
-          type="date"
-          value={value || ""}
-          min={getMinBirthDate()} // 120 years ago
-          max={getMaxBirthDate()} // Today
-          onChange={(e) => handleBirthdaySelect(e.target.value)}
-          className={`border rounded-xl px-4 py-3 text-center ${
-            error ? 'border-red-500' : 'border-[#A8E6CF]'
-          }`}
-          style={{ color: "#102A43" }}
-        />
+      <div className="flex flex-col items-center space-y-8">
+        {/* Custom Google-style Date Input */}
+        <motion.div 
+          className="flex flex-col items-center space-y-6"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
+        >
+          <DateInput
+            value={value || ''}
+            onChange={handleDateChange}
+            onValidationChange={handleValidationChange}
+            minDate={getMinBirthDate()}
+            maxDate={getMaxBirthDate()}
+            className={`${error ? 'opacity-75' : ''}`}
+          />
+          
+          {/* Instruction text */}
+          <p className="text-sm text-center font-medium" style={{ color: "#102A43", opacity: 0.6 }}>
+            📅 Tap each field to enter your birth date
+          </p>
+        </motion.div>
 
         {/* Error message display */}
         {error && (
-          <div className="text-red-500 text-sm text-center bg-red-50 px-4 py-2 rounded-lg border border-red-200">
-            {error}
-          </div>
+          <motion.div 
+            className="text-red-600 text-sm text-center bg-red-50 px-6 py-3 rounded-xl border-l-4 border-red-400 shadow-sm max-w-sm"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-red-500">⚠️</span>
+              {error}
+            </div>
+          </motion.div>
         )}
 
-        <button
-          onClick={onContinue}
-          disabled={!isValidDate || loading}
-          className={`mt-6 px-8 py-3 rounded-xl text-white transition-all ${
-            !isValidDate || loading 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-[#1C7C54] hover:bg-[#156B47]'
-          }`}
-        >
-          {loading ? "Saving..." : "Continue"}
-        </button>
+        {/* Loading indicator */}
+        {loading && (
+          <motion.div 
+            className="flex items-center gap-3 text-center text-sm bg-blue-50 px-6 py-3 rounded-xl border-l-4 border-blue-400 shadow-sm"
+            style={{ color: "#102A43" }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+            <span className="font-medium">Saving your information...</span>
+          </motion.div>
+        )}
+
+        {/* Success message */}
+        {isValid && !error && !loading && value && (
+          <motion.div 
+            className="text-green-700 text-sm text-center bg-green-50 px-6 py-3 rounded-xl border-l-4 border-green-400 shadow-sm"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-green-500">✅</span>
+              <span className="font-medium">Date saved successfully!</span>
+            </div>
+          </motion.div>
+        )}
       </div>
     </motion.div>
   );

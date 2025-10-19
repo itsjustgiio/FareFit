@@ -241,7 +241,6 @@
   }
 
   img, svg, video, canvas, audio, iframe, embed, object {
-    vertical-align: middle;
     display: block;
   }
 
@@ -2654,6 +2653,7 @@
 
   :is(.\*\:data-\[slot\=select-value\]\:line-clamp-1 > *)[data-slot="select-value"] {
     -webkit-line-clamp: 1;
+    line-clamp: 1;
     -webkit-box-orient: vertical;
     display: -webkit-box;
     overflow: hidden;
@@ -3438,6 +3438,7 @@ input::-webkit-outer-spin-button {
 
 input[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .no-spin::-webkit-inner-spin-button {
@@ -3452,6 +3453,7 @@ input[type="number"] {
 
 .no-spin[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 @property --tw-translate-x {
