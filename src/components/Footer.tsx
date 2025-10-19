@@ -1,19 +1,33 @@
+import React from 'react';
+
+type NavigationPage = 'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai';
+
 interface FooterProps {
-  onNavigate?: (page: 'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai') => void;
+  onNavigate?: (page: NavigationPage) => void;
   onFeedbackClick?: () => void;
 }
 
+type FooterLink = 
+  | { label: string; page: NavigationPage }
+  | { label: string; action: 'feedback' }
+  | { label: string; href: string; external: boolean };
+
+// Type guards
+const isNavigationPage = (link: FooterLink): link is { label: string; page: NavigationPage } => 'page' in link;
+const isFeedbackAction = (link: FooterLink): link is { label: string; action: 'feedback' } => 'action' in link;
+const isExternalLink = (link: FooterLink): link is { label: string; href: string; external: boolean } => 'href' in link;
+
 export function Footer({ onNavigate, onFeedbackClick }: FooterProps) {
-  const links = [
-    { label: 'Help', page: 'help' as const },
-    { label: 'Feedback', action: 'feedback' as const },
-    { label: 'Privacy', page: 'privacy' as const },
-    { label: 'Terms', page: 'terms' as const },
+  const links: FooterLink[] = [
+    { label: 'Help', page: 'help' },
+    { label: 'Feedback', action: 'feedback' },
+    { label: 'Privacy', page: 'privacy' },
+    { label: 'Terms', page: 'terms' },
     { label: 'GitHub', href: 'https://github.com/itsjustgiio/FareFit', external: true },
     { label: 'LinkedIn', href: 'https://www.linkedin.com/in/giovannicarrion/', external: true }
   ];
 
-  const handleClick = (link: typeof links[0], e: React.MouseEvent) => {
+  const handleClick = (link: FooterLink, e: React.MouseEvent) => {
     if ('page' in link && onNavigate) {
       e.preventDefault();
       onNavigate(link.page);
@@ -39,8 +53,8 @@ export function Footer({ onNavigate, onFeedbackClick }: FooterProps) {
                 <a
                   key={index}
                   href={'page' in link || 'action' in link ? '#' : link.href}
-                  target={link.external ? '_blank' : undefined}
-                  rel={link.external ? 'noopener noreferrer' : undefined}
+                  target={isExternalLink(link) ? '_blank' : undefined}
+                  rel={isExternalLink(link) ? 'noopener noreferrer' : undefined}
                   onClick={(e) => handleClick(link, e)}
                   className="text-xs hover:text-white hover:underline underline-offset-4 transition-all cursor-pointer"
                   style={{ color: 'white', opacity: 0.8 }}
