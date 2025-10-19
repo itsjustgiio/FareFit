@@ -9,7 +9,7 @@ export function Footer({ onNavigate, onFeedbackClick }: FooterProps) {
     { label: 'Feedback', action: 'feedback' as const },
     { label: 'Privacy', page: 'privacy' as const },
     { label: 'Terms', page: 'terms' as const },
-    { label: 'GitHub', href: 'https://github.com/itsjustgiio', external: true },
+    { label: 'GitHub', href: 'https://github.com/itsjustgiio/FareFit', external: true },
     { label: 'LinkedIn', href: 'https://www.linkedin.com/in/giovannicarrion/', external: true }
   ];
 
