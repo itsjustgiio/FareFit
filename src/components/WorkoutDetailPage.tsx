@@ -46,6 +46,16 @@ interface WorkoutDetailPageProps {
   onSaveWorkout: (workout: WorkoutData) => void;
 }
 
+// Muscle group mappings
+const MUSCLE_GROUPS = {
+  chest: ['bench', 'press', 'chest', 'pec', 'fly', 'pushup', 'dips'],
+  shoulders: ['shoulder', 'press', 'delt', 'lateral', 'front raise', 'military press', 'ohp'],
+  back: ['row', 'pull', 'lat', 'back', 'deadlift', 'pullup', 'chinup', 'pulldown', 'shrug'],
+  legs: ['squat', 'leg', 'quad', 'hamstring', 'calf', 'lunges', 'deadlift', 'leg press', 'extension', 'curl'],
+  arms: ['curl', 'tricep', 'bicep', 'arm', 'extension', 'pushdown', 'hammer'],
+  core: ['crunch', 'ab', 'core', 'plank', 'situp', 'leg raise', 'russian twist']
+};
+
 export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveWorkout }: WorkoutDetailPageProps) {
   const [workoutType, setWorkoutType] = useState(workoutData?.workoutType || 'Push Day 💪');
   const [duration, setDuration] = useState(workoutData?.duration || 0);
@@ -55,6 +65,9 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showTimePicker, setShowTimePicker] = useState<{id: string, type: 'start' | 'end'} | null>(null);
+  const [volumeProgressData, setVolumeProgressData] = useState<any[]>([]);
+  const [muscleFocusData, setMuscleFocusData] = useState<any[]>([]);
+  const [workoutHistory, setWorkoutHistory] = useState<any[]>([]);
 
   const auth = getAuth();
   
@@ -70,7 +83,202 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
   useEffect(() => {
     loadTodayWorkout();
     checkAndClearDailyWorkout();
+    loadWorkoutHistory();
   }, []);
+
+  // Load workout history for analytics
+  const loadWorkoutHistory = async () => {
+    try {
+      const history = await getWorkoutHistory();
+      setWorkoutHistory(history);
+      calculateVolumeProgress(history);
+    } catch (error) {
+      console.error('Error loading workout history:', error);
+    }
+  };
+
+  // Calculate volume progress data
+  const calculateVolumeProgress = (history: any[]) => {
+    if (!history || history.length === 0) {
+      // Default data if no history
+      const defaultData = [
+        { name: 'Mon', volume: 0 },
+        { name: 'Tue', volume: 0 },
+        { name: 'Wed', volume: 0 },
+        { name: 'Thu', volume: 0 },
+        { name: 'Fri', volume: 0 },
+        { name: 'Sat', volume: 0 },
+        { name: 'Today', volume: totalVolume }
+      ];
+      setVolumeProgressData(defaultData);
+      return;
+    }
+
+    // Get last 7 days including today
+    //const last7Days = [];
+    const last7Days: {name: string, volume: number, date: string}[] = [];
+    const today = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateString = date.toISOString().split('T')[0];
+      
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dayName = i === 0 ? 'Today' : dayNames[date.getDay()];
+      
+      // Find workout for this date
+      const workout = history.find(w => w.date === dateString);
+      const volume = workout?.volume || workout?.total_volume || 0;
+      
+      last7Days.push({
+        name: dayName,
+        volume: volume,
+        date: dateString
+      });
+    }
+    
+    setVolumeProgressData(last7Days);
+  };
+
+  // Calculate muscle focus data based on current exercises
+  const calculateMuscleFocus = (exercises: Exercise[]) => {
+    if (!exercises || exercises.length === 0) {
+      // Default data if no exercises
+      const defaultData = [
+        { name: 'Chest', value: 0, color: '#1C7C54' },
+        { name: 'Shoulders', value: 0, color: '#A8E6CF' },
+        { name: 'Back', value: 0, color: '#73C6B6' },
+        { name: 'Legs', value: 0, color: '#4A9D9C' },
+        { name: 'Arms', value: 0, color: '#FFB6B9' },
+        { name: 'Core', value: 0, color: '#FF9A8B' }
+      ];
+      setMuscleFocusData(defaultData);
+      return;
+    }
+
+    const muscleVolume: { [key: string]: number } = {
+      chest: 0,
+      shoulders: 0,
+      back: 0,
+      legs: 0,
+      arms: 0,
+      core: 0
+    };
+
+    // Analyze each exercise to determine muscle groups and volume
+    exercises.forEach(exercise => {
+      const exerciseVolume = exercise.sets.reduce((sum, set) => sum + set.volume, 0);
+      const exerciseName = exercise.name.toLowerCase();
+      
+      // Determine which muscle groups this exercise targets
+      const targetedMuscles: string[] = [];
+      
+      Object.entries(MUSCLE_GROUPS).forEach(([muscle, keywords]) => {
+        if (keywords.some(keyword => exerciseName.includes(keyword))) {
+          targetedMuscles.push(muscle);
+        }
+      });
+
+      // If no specific muscles detected, distribute based on workout type
+      if (targetedMuscles.length === 0) {
+        const workoutTypeLower = workoutType.toLowerCase();
+        if (workoutTypeLower.includes('push')) {
+          targetedMuscles.push('chest', 'shoulders', 'arms');
+        } else if (workoutTypeLower.includes('pull')) {
+          targetedMuscles.push('back', 'arms');
+        } else if (workoutTypeLower.includes('leg')) {
+          targetedMuscles.push('legs', 'core');
+        } else {
+          // Default distribution for unknown workout types
+          targetedMuscles.push('chest', 'shoulders', 'back', 'legs', 'arms', 'core');
+        }
+      }
+
+      // Distribute volume equally among targeted muscles
+      const volumePerMuscle = exerciseVolume / targetedMuscles.length;
+      targetedMuscles.forEach(muscle => {
+        muscleVolume[muscle] += volumePerMuscle;
+      });
+    });
+
+    // Convert to percentage and format for chart
+    const totalVolume = Object.values(muscleVolume).reduce((sum, vol) => sum + vol, 0);
+    
+    if (totalVolume === 0) {
+      const defaultData = [
+        { name: 'Chest', value: 0, color: '#1C7C54' },
+        { name: 'Shoulders', value: 0, color: '#A8E6CF' },
+        { name: 'Back', value: 0, color: '#73C6B6' },
+        { name: 'Legs', value: 0, color: '#4A9D9C' },
+        { name: 'Arms', value: 0, color: '#FFB6B9' },
+        { name: 'Core', value: 0, color: '#FF9A8B' }
+      ];
+      setMuscleFocusData(defaultData);
+      return;
+    }
+
+    const muscleData = [
+      { 
+        name: 'Chest', 
+        value: Math.round((muscleVolume.chest / totalVolume) * 100),
+        volume: muscleVolume.chest,
+        color: '#1C7C54'
+      },
+      { 
+        name: 'Shoulders', 
+        value: Math.round((muscleVolume.shoulders / totalVolume) * 100),
+        volume: muscleVolume.shoulders,
+        color: '#A8E6CF'
+      },
+      { 
+        name: 'Back', 
+        value: Math.round((muscleVolume.back / totalVolume) * 100),
+        volume: muscleVolume.back,
+        color: '#73C6B6'
+      },
+      { 
+        name: 'Legs', 
+        value: Math.round((muscleVolume.legs / totalVolume) * 100),
+        volume: muscleVolume.legs,
+        color: '#4A9D9C'
+      },
+      { 
+        name: 'Arms', 
+        value: Math.round((muscleVolume.arms / totalVolume) * 100),
+        volume: muscleVolume.arms,
+        color: '#FFB6B9'
+      },
+      { 
+        name: 'Core', 
+        value: Math.round((muscleVolume.core / totalVolume) * 100),
+        volume: muscleVolume.core,
+        color: '#FF9A8B'
+      }
+    ].filter(item => item.value > 0); // Only show muscles with volume
+
+    setMuscleFocusData(muscleData);
+  };
+
+  // Calculate weekly progress
+  const calculateWeeklyProgress = () => {
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay()); // Start from Sunday
+    
+    const weekWorkouts = workoutHistory.filter(workout => {
+      const workoutDate = new Date(workout.date);
+      return workoutDate >= startOfWeek && workout.volume > 0;
+    });
+    
+    return {
+      completed: weekWorkouts.length,
+      total: 5, // Assuming 5 workouts per week goal
+      percentage: Math.min((weekWorkouts.length / 5) * 100, 100)
+    };
+  };
+
+  const weeklyProgress = calculateWeeklyProgress();
 
   const loadTodayWorkout = async () => {
     try {
@@ -112,10 +320,12 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
         });
         
         setExercises(transformedExercises);
+        calculateMuscleFocus(transformedExercises);
       } else {
         setExercises([]);
         setDuration(0);
         setCaloriesBurned(0);
+        calculateMuscleFocus([]);
       }
     } catch (error) {
       console.error('Error loading workout:', error);
@@ -124,6 +334,26 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       setIsLoading(false);
     }
   };
+
+  // Update muscle focus when exercises change
+  useEffect(() => {
+    calculateMuscleFocus(exercises);
+  }, [exercises, workoutType]);
+
+  // Update volume progress when total volume changes
+  useEffect(() => {
+    if (volumeProgressData.length > 0) {
+      const updatedData = [...volumeProgressData];
+      const todayIndex = updatedData.findIndex(item => item.name === 'Today');
+      if (todayIndex !== -1) {
+        updatedData[todayIndex] = {
+          ...updatedData[todayIndex],
+          volume: totalVolume
+        };
+        setVolumeProgressData(updatedData);
+      }
+    }
+  }, [totalVolume]);
 
   const handleLoadPreviousWorkout = async (workoutTypeKeyword: string) => {
     try {
@@ -189,22 +419,6 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       toast.error('Failed to load previous workout');
     }
   };
-
-  const progressData = [
-    { name: 'Mon', volume: 8500 },
-    { name: 'Tue', volume: 0 },
-    { name: 'Wed', volume: 9200 },
-    { name: 'Thu', volume: 0 },
-    { name: 'Fri', volume: 9550 },
-    { name: 'Sat', volume: 0 },
-    { name: 'Today', volume: totalVolume }
-  ];
-
-  const muscleData = [
-    { name: 'Chest', value: 45, color: '#1C7C54' },
-    { name: 'Shoulders', value: 30, color: '#A8E6CF' },
-    { name: 'Triceps', value: 25, color: '#FFB6B9' }
-  ];
 
   const handleAddExercise = () => {
     const newExercise: Exercise = {
@@ -434,6 +648,42 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
 
   const getTodayEST = (): string => {
     return getDateInEasternTimezone();
+  };
+
+  // Custom Tooltip for Volume Progress
+  const CustomVolumeTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="p-3 rounded-lg shadow-lg border transition-colors duration-300"
+             style={{ backgroundColor: 'var(--farefit-card)', borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+          <p className="font-medium">{label}</p>
+          <p style={{ color: 'var(--farefit-primary)' }}>
+            Volume: <strong>{payload[0].value.toLocaleString()} lb</strong>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Custom Tooltip for Muscle Focus
+  const CustomMuscleTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="p-3 rounded-lg shadow-lg border transition-colors duration-300"
+             style={{ backgroundColor: 'var(--farefit-card)', borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+          <p className="font-medium">{data.name}</p>
+          <p style={{ color: data.color }}>
+            Percentage: <strong>{data.value}%</strong>
+          </p>
+          <p style={{ color: 'var(--farefit-subtext)' }}>
+            Volume: <strong>{data.volume.toLocaleString()} lb</strong>
+          </p>
+        </div>
+      );
+    }
+    return null;
   };
 
   const TimePicker = ({ exerciseId, type, currentTime }: { exerciseId: string, type: 'start' | 'end', currentTime: string }) => {
@@ -902,25 +1152,31 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
               <h3 className="m-0" style={{ color: 'var(--farefit-text)' }}>Volume Progress</h3>
             </div>
             <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={progressData}>
+              <LineChart data={volumeProgressData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--farefit-border)" />
-                <XAxis dataKey="name" stroke="var(--farefit-subtext)" style={{ fontSize: '12px' }} />
-                <YAxis stroke="var(--farefit-subtext)" style={{ fontSize: '12px' }} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--farefit-card)', border: '1px solid var(--farefit-secondary)', borderRadius: '8px', color: 'var(--farefit-text)' }}
+                <XAxis 
+                  dataKey="name" 
+                  stroke="var(--farefit-subtext)" 
+                  style={{ fontSize: '12px' }} 
                 />
+                <YAxis 
+                  stroke="var(--farefit-subtext)" 
+                  style={{ fontSize: '12px' }}
+                  tickFormatter={(value) => value >= 1000 ? `${(value/1000).toFixed(0)}k` : value}
+                />
+                <Tooltip content={<CustomVolumeTooltip />} />
                 <Line 
                   type="monotone" 
                   dataKey="volume" 
                   stroke="var(--farefit-primary)" 
                   strokeWidth={3}
                   dot={{ fill: 'var(--farefit-primary)', r: 4 }}
-                  activeDot={{ r: 6 }}
+                  activeDot={{ r: 6, fill: 'var(--farefit-accent)' }}
                 />
               </LineChart>
             </ResponsiveContainer>
             <p className="text-sm text-center mt-2" style={{ color: 'var(--farefit-subtext)' }}>
-              Last 7 Push Days
+              {volumeProgressData.filter(day => day.volume > 0).length} workouts this week
             </p>
           </div>
 
@@ -933,24 +1189,24 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
-                  data={muscleData}
+                  data={muscleFocusData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={(entry) => `${entry.name} ${entry.value}%`}
+                  label={({ name, value }) => value > 5 ? `${name} ${value}%` : ''}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {muscleData.map((entry, index) => (
+                  {muscleFocusData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip content={<CustomMuscleTooltip />} />
               </PieChart>
             </ResponsiveContainer>
             <p className="text-sm text-center mt-2" style={{ color: 'var(--farefit-subtext)' }}>
-              Today's workout distribution
+              {muscleFocusData.length} muscle groups targeted
             </p>
           </div>
         </div>
@@ -966,14 +1222,23 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
               <div className="h-4 rounded-full overflow-hidden transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)' }}>
                 <div 
                   className="h-full rounded-full transition-all duration-300"
-                  style={{ width: '80%', backgroundColor: 'var(--farefit-primary)' }}
+                  style={{ 
+                    width: `${weeklyProgress.percentage}%`, 
+                    backgroundColor: weeklyProgress.percentage >= 80 ? 'var(--farefit-primary)' : 
+                                   weeklyProgress.percentage >= 60 ? '#4A9D9C' : '#FF9A8B' 
+                  }}
                 />
               </div>
             </div>
-            <p className="text-xl" style={{ color: 'var(--farefit-primary)' }}>4/5</p>
+            <p className="text-xl" style={{ color: 'var(--farefit-primary)' }}>
+              {weeklyProgress.completed}/{weeklyProgress.total}
+            </p>
           </div>
           <p className="text-sm mt-2" style={{ color: 'var(--farefit-subtext)' }}>
-            🔥 4 workouts this week — Keep the streak alive!
+            {weeklyProgress.completed === 0 ? 'Start your week strong! 💪' :
+             weeklyProgress.completed < 3 ? 'Great start! Keep going! 🔥' :
+             weeklyProgress.completed < 5 ? 'Almost there! One more workout! 🚀' :
+             'Amazing week! You crushed it! 🎯'}
           </p>
         </div>
 
