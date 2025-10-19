@@ -428,7 +428,7 @@ export default function App() {
     
     // Set demo fitness goal
     const demoGoal: GoalData = {
-      goalType: 'lose-weight',
+      goalType: 'cut', // 👈 Changed from 'lose-weight' to match type
       targetWeight: 70,
       weeklyGoal: 0.5,
       activityLevel: 'moderately-active',

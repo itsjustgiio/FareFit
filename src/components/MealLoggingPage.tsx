@@ -97,6 +97,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
       fat: 0,
       fiber: 0,
       isExpanded: true,
+      brandName: '', // 👈 Added missing brandName property
     };
     setFoodItems([...foodItems, newItem]);
   };
@@ -352,7 +353,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
 
           <TabsContent value="barcode">
             <BarcodeScanTab
-              onFoodDetected={(foodData) => {
+              onFoodDetected={(foodData: any) => { // 👈 Added type annotation
                 const newItem: FoodItem = {
                   id: Date.now().toString(),
                   ...foodData,
@@ -366,7 +367,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
 
           <TabsContent value="scan">
             <PhotoScanTab
-              onMealDetected={(mealData) => {
+              onMealDetected={(mealData: any) => { // 👈 Added type annotation
                 setFoodItems(mealData.items);
                 setMealName(mealData.name);
                 setUsePredefinedMeal(false);
@@ -377,7 +378,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
 
           <TabsContent value="ai">
             <AskFoodAITab
-              onMealParsed={(mealData) => {
+              onMealParsed={(mealData: any) => { // 👈 Added type annotation
                 setFoodItems(mealData.items);
                 setMealName(mealData.name);
                 setUsePredefinedMeal(false);
@@ -457,7 +458,7 @@ function ManualEntryTab({
 
         if (todayMeals && todayMeals.length > 0) {
           const total = todayMeals.reduce(
-            (acc, meal) => ({
+            (acc: any, meal: any) => ({ // 👈 Added type annotations
               calories: acc.calories + (meal.calories || 0),
               protein: acc.protein + (meal.protein || 0),
               carbs: acc.carbs + (meal.carbs || 0),
@@ -852,7 +853,7 @@ function FoodItemCard({
                     type="number"
                     step="0.1"
                     min="0"
-                    plxaceholder="1.0"
+                    placeholder="1.0" // 👈 Fixed typo: plxaceholder → placeholder
                     value={item.amountConsumed.toString()}
                     onChange={(e) => {
                       const val = e.target.value;

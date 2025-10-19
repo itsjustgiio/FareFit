@@ -26,6 +26,7 @@ export interface GoalData {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number; // 👈 Added missing fiber property
 }
 
 export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClick }: FitnessGoalPageProps) {
@@ -197,7 +198,10 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
     const carbCals = calories - proteinCals - fatCals;
     const carbs = Math.round(carbCals / 4);
     
-    return { protein, carbs, fat };
+    // Fiber: 14g per 1000 calories (FDA recommendation)
+    const fiber = Math.round((calories / 1000) * 14);
+    
+    return { protein, carbs, fat, fiber };
   };
 
   const getTargetCalories = (tdee: number, goalType: 'cut' | 'maintain' | 'bulk') => {
@@ -211,7 +215,7 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
   const [showResults, setShowResults] = useState(false);
   const [calculatedTdee, setCalculatedTdee] = useState(0);
   const [calculatedTargetCalories, setCalculatedTargetCalories] = useState(0);
-  const [calculatedMacros, setCalculatedMacros] = useState<{ protein: number; carbs: number; fat: number } | null>(null);
+  const [calculatedMacros, setCalculatedMacros] = useState<{ protein: number; carbs: number; fat: number; fiber: number } | null>(null);
 
   const handleCalculate = () => {
     if (!selectedGoal || !age || !weight || !activityLevel) {
