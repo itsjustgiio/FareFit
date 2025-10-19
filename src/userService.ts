@@ -142,6 +142,9 @@ export async function createUserRecords(userId: string, name: string, email: str
       lastStreakDate: '2025-10-17', // NEW FIELD
       penalties: 0,
       joinDate: 'August 15, 2025',
+      history: [
+        { date: '2025-10-17', score: 350 }
+      ]
     });
 
 
@@ -522,5 +525,22 @@ export const migrateOnboardingStatus = async (userId: string): Promise<void> => 
   } catch (error) {
     console.error("❌ Error migrating onboarding status:", error);
     // Don't throw - this is a best-effort migration
+  }
+};
+
+export const getUserFareScore = async (userId: string) => {
+  try {
+    const docRef = doc(db, "FareScore", userId);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      return docSnap.data();
+    } else {
+      console.warn("No FareScore document found for user:", userId);
+      return null;
+    }
+  } catch (err) {
+    console.error("❌ Error fetching FareScore:", err);
+    return null;
   }
 };

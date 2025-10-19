@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUp, ArrowDown, TrendingUp, Award, Calendar, Users, Trophy, Heart, Settings, Edit2, Share2, Check, Copy, X, UserPlus, Bell, Lock, Ruler, Trash2, Camera, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -13,6 +13,8 @@ import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner@2.0.3';
 import { getThemeColors } from '../utils/themeColors';
+import { getUserFareScore } from '../userService';
+import { getAuth } from 'firebase/auth';
 
 interface AccountPageProps {
   onBack: () => void;
@@ -26,14 +28,15 @@ interface AccountPageProps {
 
 interface FareScoreData {
   score: number;
-  change: number; // Change from last week
-  tier: 'Starting Journey' | 'Building Habits' | 'Consistent Tracker' | 'Goal Crusher' | 'FareFit Elite';
+  change: number;
+  tier: string;
   history: { date: string; score: number }[];
   mealsLogged: number;
   workoutsCompleted: number;
   streakDays: number;
   penalties: number;
   joinDate: string;
+  lastStreakDate?: string;
 }
 
 interface Friend {
@@ -68,6 +71,39 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
   const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
   const [cheeredFriends, setCheeredFriends] = useState<Set<string>>(new Set());
+  const [fareScoreData, setFareScoreData] = useState<FareScoreData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchFareScoreData = async () => {
+      // You'll need to get the current user's ID - adjust this based on your auth
+      const auth = getAuth();
+      const user = auth.currentUser;
+      const userId = user?.uid // Replace with actual user ID from your auth
+
+      if (!user) {return}
+      if (!userId) {return}
+      
+      const data = await getUserFareScore(userId);
+      if (data) {
+        // Transform the Firebase data to match your FareScoreData interface
+        setFareScoreData({
+          score: data.score || 0,
+          change: 0, // You'll need to calculate this or store it in Firebase
+          tier: data.tier || 'Starting Journey',
+          history: data.history || [], // You'll need to store this in Firebase or calculate
+          mealsLogged: data.mealsLogged || 0,
+          workoutsCompleted: data.workoutsCompleted || 0,
+          streakDays: data.streakDays || 0,
+          penalties: data.penalties || 0,
+          joinDate: data.joinDate || 'Unknown',
+        });
+      }
+      setLoading(false);
+    };
+
+    fetchFareScoreData();
+  }, []);
   
   // Edit profile form state - Use localStorage as source of truth, fallback to props
   const [editName, setEditName] = useState(() => {
@@ -97,26 +133,6 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
     const saved = localStorage.getItem('farefit_units');
     return (saved as 'metric' | 'imperial') || 'metric';
   });
-
-  // Demo FareScore data
-  const fareScoreData: FareScoreData = {
-    score: 615,
-    change: 8,
-    tier: 'Consistent Tracker',
-    history: [
-      { date: 'Sep 17', score: 550 },
-      { date: 'Sep 24', score: 565 },
-      { date: 'Oct 1', score: 582 },
-      { date: 'Oct 8', score: 595 },
-      { date: 'Oct 15', score: 607 },
-      { date: 'Oct 17', score: 615 },
-    ],
-    mealsLogged: 27,
-    workoutsCompleted: 11,
-    streakDays: 14,
-    penalties: 2,
-    joinDate: 'August 15, 2025',
-  };
 
   // Demo friends data
   const friends: Friend[] = [
@@ -310,6 +326,22 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
     setIsDeleteAccountOpen(false);
     setIsSettingsOpen(false);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: colors.bg }}>
+        <div style={{ color: colors.textPrimary }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!fareScoreData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: colors.bg }}>
+        <div style={{ color: colors.textPrimary }}>No data found</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: colors.bg }}>
