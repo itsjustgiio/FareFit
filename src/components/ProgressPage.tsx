@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Flame, Trophy, Activity, Lock, ChevronDown, ChevronUp } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Footer } from './Footer';
 import { FeedbackModal } from './FeedbackModal';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
+import { getWeeklyFacts, getUserAchievements, getFoodStreaks, updateDailyMetrics} from '../userService';
+import { getAuth } from 'firebase/auth';
 
 interface ProgressPageProps {
   onBack: () => void;
@@ -11,42 +13,222 @@ interface ProgressPageProps {
   onFeedbackClick: () => void;
 }
 
+interface WeeklyFacts {
+  total_cals: number;
+  total_burned: number;
+  net_calories: number;
+  total_workouts: number;
+  days_consumed: Record<string, number>;
+  days_burned: Record<string, number>;
+  days_net: Record<string, number>;
+}
+
+interface Achievement {
+  id: number;
+  title: string;
+  description: string;
+  earned: boolean;
+  mystery: boolean;
+  discovered?: boolean;
+  hint?: string;
+  category?: string;
+  color?: string;
+  categoryIcon?: string;
+}
+
 export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPageProps) {
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
-  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(['Nutrition'])); // First category open by default
+  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(['Nutrition']));
+  const [weeklyFacts, setWeeklyFacts] = useState<WeeklyFacts | null>(null);
+  const [userAchievements, setUserAchievements] = useState<any>(null);
+  const [foodStreaks, setFoodStreaks] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const weeklyStats = [
-    { day: 'Mon', consumed: 2100, burned: 450, net: 1650, workout: true },
-    { day: 'Tue', consumed: 1950, burned: 320, net: 1630, workout: false },
-    { day: 'Wed', consumed: 2200, burned: 520, net: 1680, workout: true },
-    { day: 'Thu', consumed: 1850, burned: 480, net: 1370, workout: true },
-    { day: 'Fri', consumed: 2050, burned: 290, net: 1760, workout: false },
-    { day: 'Sat', consumed: 2300, burned: 550, net: 1750, workout: true },
-    { day: 'Sun', consumed: 1900, burned: 380, net: 1520, workout: false },
+  // Fetch all progress data
+  useEffect(() => {
+    const fetchProgressData = async () => {
+      try {
+        setLoading(true);
+        const auth = getAuth();
+        const user = auth.currentUser;
+        
+        if (!user) {
+          setError('User not logged in');
+          return;
+        }
+
+        // Update daily metrics first to ensure data is current
+        await updateDailyMetrics(user.uid);
+        
+        // Fetch all data in parallel
+        const [facts, achievements, streaks] = await Promise.all([
+          getWeeklyFacts(),
+          getUserAchievements(user.uid),
+          getFoodStreaks(user.uid)
+        ]);
+
+        setWeeklyFacts(facts);
+        setUserAchievements(achievements);
+        setFoodStreaks(streaks);
+        
+      } catch (err) {
+        setError(err.message);
+        console.error('Failed to fetch progress data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProgressData();
+  }, []);
+
+  // Transform Firestore data to match your chart format
+  const weeklyStats = weeklyFacts ? [
+    { 
+      day: 'Mon', 
+      consumed: weeklyFacts.days_consumed.monday || 0, 
+      burned: weeklyFacts.days_burned.monday || 0, 
+      net: weeklyFacts.days_net.monday || 0,
+      workout: weeklyFacts.days_burned.monday > 0
+    },
+    { 
+      day: 'Tue', 
+      consumed: weeklyFacts.days_consumed.tuesday || 0, 
+      burned: weeklyFacts.days_burned.tuesday || 0, 
+      net: weeklyFacts.days_net.tuesday || 0,
+      workout: weeklyFacts.days_burned.tuesday > 0
+    },
+    { 
+      day: 'Wed', 
+      consumed: weeklyFacts.days_consumed.wednesday || 0, 
+      burned: weeklyFacts.days_burned.wednesday || 0, 
+      net: weeklyFacts.days_net.wednesday || 0,
+      workout: weeklyFacts.days_burned.wednesday > 0
+    },
+    { 
+      day: 'Thu', 
+      consumed: weeklyFacts.days_consumed.thursday || 0, 
+      burned: weeklyFacts.days_burned.thursday || 0, 
+      net: weeklyFacts.days_net.thursday || 0,
+      workout: weeklyFacts.days_burned.thursday > 0
+    },
+    { 
+      day: 'Fri', 
+      consumed: weeklyFacts.days_consumed.friday || 0, 
+      burned: weeklyFacts.days_burned.friday || 0, 
+      net: weeklyFacts.days_net.friday || 0,
+      workout: weeklyFacts.days_burned.friday > 0
+    },
+    { 
+      day: 'Sat', 
+      consumed: weeklyFacts.days_consumed.saturday || 0, 
+      burned: weeklyFacts.days_burned.saturday || 0, 
+      net: weeklyFacts.days_net.saturday || 0,
+      workout: weeklyFacts.days_burned.saturday > 0
+    },
+    { 
+      day: 'Sun', 
+      consumed: weeklyFacts.days_consumed.sunday || 0, 
+      burned: weeklyFacts.days_burned.sunday || 0, 
+      net: weeklyFacts.days_net.sunday || 0,
+      workout: weeklyFacts.days_burned.sunday > 0
+    },
+  ] : [
+    { day: 'Mon', consumed: 0, burned: 0, net: 0, workout: false },
+    { day: 'Tue', consumed: 0, burned: 0, net: 0, workout: false },
+    { day: 'Wed', consumed: 0, burned: 0, net: 0, workout: false },
+    { day: 'Thu', consumed: 0, burned: 0, net: 0, workout: false },
+    { day: 'Fri', consumed: 0, burned: 0, net: 0, workout: false },
+    { day: 'Sat', consumed: 0, burned: 0, net: 0, workout: false },
+    { day: 'Sun', consumed: 0, burned: 0, net: 0, workout: false },
   ];
 
-  const totalConsumed = weeklyStats.reduce((acc, day) => acc + day.consumed, 0);
-  const totalBurned = weeklyStats.reduce((acc, day) => acc + day.burned, 0);
-  const totalNet = totalConsumed - totalBurned;
-  const workoutCount = weeklyStats.filter(day => day.workout).length;
+  // Use real data from Firestore or fallback to 0
+  const totalConsumed = weeklyFacts ? weeklyFacts.total_cals : 0;
+  const totalBurned = weeklyFacts ? weeklyFacts.total_burned : 0;
+  const totalNet = weeklyFacts ? weeklyFacts.net_calories : 0;
+  const workoutCount = weeklyFacts ? weeklyFacts.total_workouts : 0;
 
-  // Achievement categories with all 50 achievements (40 standard + 10 mystery)
+  // Achievement categories with real data from Firestore
   const achievementCategories = [
     {
       name: 'Nutrition',
       color: '#1C7C54',
       icon: '🥗',
       achievements: [
-        { id: 1, title: 'Macro Master', description: 'Hit protein goal 5 days in a row', earned: true, mystery: false },
-        { id: 2, title: 'Protein Champion', description: 'Hit protein goal for 30 days straight', earned: false, mystery: false },
-        { id: 3, title: 'Carb Control', description: 'Stayed within carb range for 7 consecutive days', earned: true, mystery: false },
-        { id: 4, title: 'Fat Balance', description: 'Hit fat target for 10 days straight', earned: false, mystery: false },
-        { id: 5, title: 'Micronutrient Minded', description: 'Logged 5 meals with fruits/veggies in a week', earned: true, mystery: false },
-        { id: 6, title: 'Clean Plate Club', description: 'Logged 3 full meals + snacks for 7 days straight', earned: true, mystery: false },
-        { id: 7, title: 'Hydration Hero', description: 'Drank 8+ glasses of water daily for a week', earned: false, mystery: false },
-        { id: 8, title: 'Fiber Fiend', description: 'Hit fiber goal 10 days total', earned: false, mystery: false },
-        { id: 9, title: 'Sugar Smart', description: 'Stayed under sugar target for 7 consecutive days', earned: true, mystery: false },
-        { id: 10, title: 'The Overachiever', description: 'Exceed any macro goal by 20%', hint: 'Go beyond your goal.', earned: false, mystery: true, discovered: false }
+        { 
+          id: 1, 
+          title: 'Macro Master', 
+          description: 'Hit protein goal 5 days in a row', 
+          earned: userAchievements?.macro_master || false, 
+          mystery: false 
+        },
+        { 
+          id: 2, 
+          title: 'Protein Champion', 
+          description: 'Hit protein goal for 30 days straight', 
+          earned: userAchievements?.protein_champ || false, 
+          mystery: false 
+        },
+        { 
+          id: 3, 
+          title: 'Carb Control', 
+          description: 'Stayed within carb range for 7 consecutive days', 
+          earned: userAchievements?.carb_control || false, 
+          mystery: false 
+        },
+        { 
+          id: 4, 
+          title: 'Fat Balance', 
+          description: 'Hit fat target for 10 days straight', 
+          earned: userAchievements?.fat_balance || false, 
+          mystery: false 
+        },
+        { 
+          id: 5, 
+          title: 'Micronutrient Minded', 
+          description: 'Logged 5 meals with fruits/veggies in a week', 
+          earned: userAchievements?.micronutr_minded || false, 
+          mystery: false 
+        },
+        { 
+          id: 6, 
+          title: 'Clean Plate Club', 
+          description: 'Logged 3 full meals + snacks for 7 days straight', 
+          earned: userAchievements?.clean_plate_club || false, 
+          mystery: false 
+        },
+        { 
+          id: 7, 
+          title: 'Hydration Hero', 
+          description: 'Drank 8+ glasses of water daily for a week', 
+          earned: userAchievements?.hydration_hero || false, 
+          mystery: false 
+        },
+        { 
+          id: 8, 
+          title: 'Fiber Fiend', 
+          description: 'Hit fiber goal 10 days total', 
+          earned: userAchievements?.fiber_fiend || false, 
+          mystery: false 
+        },
+        { 
+          id: 9, 
+          title: 'Sugar Smart', 
+          description: 'Stayed under sugar target for 7 consecutive days', 
+          earned: userAchievements?.sugar_smart || false, 
+          mystery: false 
+        },
+        { 
+          id: 10, 
+          title: 'The Overachiever', 
+          description: 'Exceed any macro goal by 20%', 
+          hint: 'Go beyond your goal.', 
+          earned: false, 
+          mystery: true, 
+          discovered: false 
+        }
       ]
     },
     {
@@ -124,19 +306,6 @@ export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPa
         { id: 50, title: 'Feedback Friend', description: 'Submit your first feedback form', earned: true, mystery: false }
       ]
     },
-    // TEMPORARILY HIDDEN: Mindset & Reflection category - uncomment when mood/reflection features are implemented
-    // {
-    //   name: 'Mindset & Reflection',
-    //   color: '#FFB6B9',
-    //   icon: '🧘',
-    //   achievements: [
-    //     { id: 51, title: 'Mindful Moment', description: 'Open the "Daily Reflection" tab once', earned: false, mystery: false },
-    //     { id: 52, title: 'Stress Check', description: 'Log how you feel 5 times', earned: false, mystery: false },
-    //     { id: 53, title: 'Protein Overload', description: 'Log 200g+ protein in one day', hint: 'There is such a thing as too much.', earned: false, mystery: true, discovered: false },
-    //     { id: 54, title: 'Consistency Reflection', description: 'Review your progress screen 10 times', earned: true, mystery: false },
-    //     { id: 55, title: 'The Ghost Logger', description: 'Log a meal, then delete it immediately', hint: 'We see you.', earned: false, mystery: true, discovered: false }
-    //   ]
-    // },
     {
       name: 'Mystery & Easter Eggs',
       color: '#6C5CE7',
@@ -148,6 +317,7 @@ export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPa
     }
   ];
 
+  // Calculate achievement statistics
   const allAchievements = achievementCategories.flatMap(cat => 
     cat.achievements.map(ach => ({ ...ach, category: cat.name, color: cat.color, categoryIcon: cat.icon }))
   );
@@ -203,7 +373,6 @@ export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPa
     
     // Auto-expand categories when filtering to show results
     if (filter !== 'all') {
-      // Expand all categories that have achievements matching the filter
       const categoriesToOpen = achievementCategories
         .filter(cat => {
           const hasMatchingAchievements = cat.achievements.some(ach => {
@@ -218,6 +387,45 @@ export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPa
       setOpenCategories(new Set(categoriesToOpen));
     }
   };
+
+  // Current streak display from food streaks
+  const currentStreak = foodStreaks ? Math.max(
+    foodStreaks.protein_track_days || 0,
+    foodStreaks.carbs_track_days || 0,
+    foodStreaks.fats_track_days || 0,
+    foodStreaks.loggedMeals_track_days || 0,
+    foodStreaks.hyrdration_track_days || 0
+  ) : 0;
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--farefit-bg)' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: 'var(--farefit-primary)' }}></div>
+          <p style={{ color: 'var(--farefit-text)' }}>Loading your progress...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--farefit-bg)' }}>
+        <div className="text-center">
+          <p style={{ color: 'var(--farefit-accent)' }}>Error: {error}</p>
+          <button 
+            onClick={onBack}
+            className="mt-4 px-4 py-2 rounded-md transition-colors"
+            style={{ backgroundColor: 'var(--farefit-primary)', color: 'white' }}
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)' }}>
@@ -273,10 +481,43 @@ export function ProgressPage({ onBack, onNavigate, onFeedbackClick }: ProgressPa
               <Flame className="w-4 h-4" style={{ color: 'var(--farefit-accent)' }} />
               <p className="text-sm" style={{ color: 'var(--farefit-subtext)' }}>Streak</p>
             </div>
-            <p className="text-3xl mb-1" style={{ color: 'var(--farefit-text)' }}>7</p>
+            <p className="text-3xl mb-1" style={{ color: 'var(--farefit-text)' }}>{currentStreak}</p>
             <p className="text-xs" style={{ color: 'var(--farefit-subtext)', opacity: 0.7 }}>days in a row</p>
           </div>
         </div>
+
+        {/* Current Streaks Display */}
+        {foodStreaks && (
+          <div className="rounded-lg p-6 shadow-sm mb-6 transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-card)' }}>
+            <h3 className="mb-4" style={{ color: 'var(--farefit-text)' }}>Current Streaks</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--farefit-primary)' }}>
+                  {foodStreaks.protein_track_days || 0}
+                </div>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>Protein Days</p>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--farefit-primary)' }}>
+                  {foodStreaks.carbs_track_days || 0}
+                </div>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>Carbs Days</p>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--farefit-primary)' }}>
+                  {foodStreaks.fats_track_days || 0}
+                </div>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>Fats Days</p>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--farefit-primary)' }}>
+                  {foodStreaks.fiber_track_days || 0}
+                </div>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>Fiber Days</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Table and Graph Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

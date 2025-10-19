@@ -1,35 +1,40 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Edit, MessageCircle, Plus, Trash2, GripVertical, Save, TrendingUp, Target, Flame, Award, Clock, Calculator, Calendar } from 'lucide-react';
+import { ArrowLeft, Edit, MessageCircle, Plus, Trash2, GripVertical, Save, TrendingUp, Target, Flame, Award, Clock, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
 import { Footer } from './Footer';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner@2.0.3';
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { getWorkoutExercises, setWorkoutExercises, checkAndClearDailyWorkout, updateUserFareScoreOnLog, getDateInEasternTimezone } from '../userService';
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getWorkoutExercises, setWorkoutExercises, checkAndClearDailyWorkout, updateUserFareScoreOnLog, getDateInEasternTimezone, getWorkoutHistory } from '../userService';
 import { getAuth } from 'firebase/auth';
+
+// Individual set data
+interface SetData {
+  id: string;
+  reps: number;
+  weight: number;
+  volume: number;
+}
 
 interface Exercise {
   id: string;
   name: string;
-  sets: number;
-  reps: number;
-  weight: number;
-  volume: number;
+  sets: SetData[]; // Now an array of sets
   notes: string;
-  startTime?: string; // ISO timestamp when exercise started
-  endTime?: string;   // ISO timestamp when exercise ended
+  startTime?: string;
+  endTime?: string;
+  isExpanded: boolean; // For UI state
 }
 
 export interface WorkoutData {
   workoutType: string;
-  duration: number; // Auto-calculated from timestamps
-  caloriesBurned: number; // Auto-calculated
+  duration: number;
+  caloriesBurned: number;
   exercises: Exercise[];
   date: string;
-  workoutStartTime?: string; // When workout started
-  workoutEndTime?: string;   // When workout ended
+  workoutStartTime?: string;
+  workoutEndTime?: string;
 }
 
 interface WorkoutDetailPageProps {
@@ -47,22 +52,23 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
   const [caloriesBurned, setCaloriesBurned] = useState(workoutData?.caloriesBurned || 0);
   const [isEditing, setIsEditing] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
-  const [exercises, setExercises] = useState<Exercise[]>(workoutData?.exercises || []);
+  const [exercises, setExercises] = useState<Exercise[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showTimePicker, setShowTimePicker] = useState<{id: string, type: 'start' | 'end'} | null>(null);
 
   const auth = getAuth();
   
-  // Calculate totals
-  const totalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
-  const totalReps = exercises.reduce((sum, ex) => sum + (ex.sets * ex.reps), 0);
-  const totalVolume = exercises.reduce((sum, ex) => sum + ex.volume, 0);
+  // Calculate totals across all sets
+  const totalSets = exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+  const totalReps = exercises.reduce((sum, ex) => 
+    sum + ex.sets.reduce((setSum, set) => setSum + set.reps, 0), 0
+  );
+  const totalVolume = exercises.reduce((sum, ex) => 
+    sum + ex.sets.reduce((setSum, set) => setSum + set.volume, 0), 0
+  );
 
-  // Load workout data on component mount
   useEffect(() => {
     loadTodayWorkout();
-    
-    // Check and clear daily workout at midnight
     checkAndClearDailyWorkout();
   }, []);
 
@@ -77,22 +83,36 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
         setDuration(todayWorkout.duration || 0);
         setCaloriesBurned(todayWorkout.calories_burned || 0);
         
-        // Transform exercises from service format to component format
-        const transformedExercises: Exercise[] = todayWorkout.exercises.map((ex: any, index: number) => ({
-          id: ex.id || `exercise-${Date.now()}-${index}`,
-          name: ex.name || 'New Exercise',
-          sets: ex.sets || 0,
-          reps: ex.reps || 0,
-          weight: ex.weight || 0,
-          volume: ex.volume || 0,
-          notes: ex.notes || '',
-          startTime: ex.startTime || undefined,
-          endTime: ex.endTime || undefined
-        }));
+        // Transform exercises - check if sets is array or number
+        const transformedExercises: Exercise[] = todayWorkout.exercises.map((ex: any, index: number) => {
+          let setsArray: SetData[];
+          
+          // Handle both old format (single set data) and new format (array of sets)
+          if (Array.isArray(ex.sets)) {
+            setsArray = ex.sets;
+          } else {
+            // Convert old format to new format
+            setsArray = [{
+              id: `${index}-1`,
+              reps: ex.reps || 0,
+              weight: ex.weight || 0,
+              volume: ex.volume || 0
+            }];
+          }
+          
+          return {
+            id: ex.id || `exercise-${Date.now()}-${index}`,
+            name: ex.name || 'New Exercise',
+            sets: setsArray,
+            notes: ex.notes || '',
+            startTime: ex.startTime || undefined,
+            endTime: ex.endTime || undefined,
+            isExpanded: false
+          };
+        });
         
         setExercises(transformedExercises);
       } else {
-        // No workout for today, start fresh
         setExercises([]);
         setDuration(0);
         setCaloriesBurned(0);
@@ -105,7 +125,71 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
     }
   };
 
-  // Progress data for chart
+  const handleLoadPreviousWorkout = async (workoutTypeKeyword: string) => {
+    try {
+      console.log(`🔍 Looking for previous ${workoutTypeKeyword} workout...`);
+      const history = await getWorkoutHistory();
+      console.log('📚 Workout history:', history);
+      
+      // Find the most recent workout matching the type
+      const previousWorkout = history.find(workout => {
+        const matchFound = workout.day_type?.toLowerCase().includes(workoutTypeKeyword.toLowerCase());
+        console.log(`Checking workout: ${workout.day_type} - Match: ${matchFound}`);
+        return matchFound;
+      });
+      
+      if (!previousWorkout) {
+        toast.error(`No previous ${workoutTypeKeyword} Day workout found`);
+        console.log(`❌ No ${workoutTypeKeyword} workout found in history`);
+        return;
+      }
+
+      console.log('✅ Found previous workout:', previousWorkout);
+
+      // Transform the exercises
+      const transformedExercises: Exercise[] = previousWorkout.exercises.map((ex: any, index: number) => {
+        let setsArray: SetData[];
+        
+        if (Array.isArray(ex.sets)) {
+          setsArray = ex.sets.map((set: any, setIndex: number) => ({
+            id: `${Date.now()}-${index}-${setIndex}`,
+            reps: set.reps || 0,
+            weight: set.weight || 0,
+            volume: set.volume || 0
+          }));
+        } else {
+          setsArray = [{
+            id: `${Date.now()}-${index}-1`,
+            reps: ex.reps || 0,
+            weight: ex.weight || 0,
+            volume: ex.volume || 0
+          }];
+        }
+        
+        return {
+          id: `exercise-${Date.now()}-${index}`,
+          name: ex.name || 'New Exercise',
+          sets: setsArray,
+          notes: ex.notes || '',
+          startTime: undefined, // Reset times for new workout
+          endTime: undefined,
+          isExpanded: false
+        };
+      });
+
+      setExercises(transformedExercises);
+      setWorkoutType(previousWorkout.day_type || `${workoutTypeKeyword} Day`);
+      setDuration(0); // Reset duration
+      setCaloriesBurned(0); // Reset calories
+      setIsEditing(true);
+      
+      toast.success(`Loaded previous ${workoutTypeKeyword} Day workout! 💪`);
+    } catch (error) {
+      console.error('Error loading previous workout:', error);
+      toast.error('Failed to load previous workout');
+    }
+  };
+
   const progressData = [
     { name: 'Mon', volume: 8500 },
     { name: 'Tue', volume: 0 },
@@ -116,31 +200,21 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
     { name: 'Today', volume: totalVolume }
   ];
 
-  // Muscle group distribution
   const muscleData = [
     { name: 'Chest', value: 45, color: '#1C7C54' },
     { name: 'Shoulders', value: 30, color: '#A8E6CF' },
     { name: 'Triceps', value: 25, color: '#FFB6B9' }
   ];
 
-  // Preset workouts
-  const presets = [
-    { name: 'Push Day', exercises: ['Bench Press', 'Incline DB Press', 'Lateral Raises', 'Tricep Pushdowns'] },
-    { name: 'Pull Day', exercises: ['Pull-ups', 'Barbell Rows', 'Lat Pulldown', 'Bicep Curls'] },
-    { name: 'Leg Day', exercises: ['Squats', 'Romanian Deadlifts', 'Leg Press', 'Leg Curls'] }
-  ];
-
   const handleAddExercise = () => {
     const newExercise: Exercise = {
       id: Date.now().toString(),
       name: 'New Exercise',
-      sets: 3,
-      reps: 10,
-      weight: 0,
-      volume: 0,
+      sets: [{ id: `${Date.now()}-1`, reps: 10, weight: 0, volume: 0 }],
       notes: '',
       startTime: undefined,
-      endTime: undefined
+      endTime: undefined,
+      isExpanded: true
     };
     setExercises([...exercises, newExercise]);
     setIsEditing(true);
@@ -151,26 +225,80 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
     toast.success('Exercise removed');
   };
 
-  const handleUpdateExercise = (id: string, field: keyof Exercise, value: any) => {
+  const handleUpdateExerciseName = (id: string, name: string) => {
+    setExercises(exercises.map(ex => ex.id === id ? { ...ex, name } : ex));
+  };
+
+  const handleUpdateExerciseNotes = (id: string, notes: string) => {
+    setExercises(exercises.map(ex => ex.id === id ? { ...ex, notes } : ex));
+  };
+
+  const handleUpdateExerciseTime = (id: string, field: 'startTime' | 'endTime', value: string | undefined) => {
+    setExercises(exercises.map(ex => ex.id === id ? { ...ex, [field]: value } : ex));
+  };
+
+  const toggleExpand = (id: string) => {
+    setExercises(exercises.map(ex => 
+      ex.id === id ? { ...ex, isExpanded: !ex.isExpanded } : ex
+    ));
+  };
+
+  const addSet = (exerciseId: string) => {
     setExercises(exercises.map(ex => {
-      if (ex.id === id) {
-        const updated = { ...ex, [field]: value };
-        // Recalculate volume if sets, reps, or weight changed
-        if (field === 'sets' || field === 'reps' || field === 'weight') {
-          updated.volume = updated.sets * updated.reps * updated.weight;
-        }
-        return updated;
+      if (ex.id === exerciseId) {
+        const lastSet = ex.sets[ex.sets.length - 1];
+        const newSet: SetData = {
+          id: `${exerciseId}-${Date.now()}`,
+          reps: lastSet?.reps || 10,
+          weight: lastSet?.weight || 0,
+          volume: (lastSet?.reps || 10) * (lastSet?.weight || 0)
+        };
+        return { ...ex, sets: [...ex.sets, newSet] };
       }
       return ex;
     }));
+  };
+
+  const removeSet = (exerciseId: string, setId: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === exerciseId && ex.sets.length > 1) {
+        return { ...ex, sets: ex.sets.filter(s => s.id !== setId) };
+      }
+      return ex;
+    }));
+  };
+
+  const updateSet = (exerciseId: string, setId: string, field: 'reps' | 'weight', value: number) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === exerciseId) {
+        return {
+          ...ex,
+          sets: ex.sets.map(set => {
+            if (set.id === setId) {
+              const updated = { ...set, [field]: value };
+              updated.volume = updated.reps * updated.weight;
+              return updated;
+            }
+            return set;
+          })
+        };
+      }
+      return ex;
+    }));
+  };
+
+  const getExerciseTotals = (exercise: Exercise) => {
+    const totalReps = exercise.sets.reduce((sum, set) => sum + set.reps, 0);
+    const totalVolume = exercise.sets.reduce((sum, set) => sum + set.volume, 0);
+    return { totalReps, totalVolume };
   };
 
   const handleSaveWorkout = async () => {
     try {
       setIsEditing(false);
       
-      // Transform to service format
-      const workoutToSave = {
+      // Transform to database format - flatten sets for storage
+      const workoutToSave: any = {
         day_type: workoutType,
         duration: duration || 0,
         calories_burned: caloriesBurned || 0,
@@ -179,10 +307,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
         volume: totalVolume,
         exercises: exercises.map(ex => ({
           name: ex.name,
-          sets: ex.sets,
-          reps: ex.reps,
-          weight: ex.weight,
-          volume: ex.volume,
+          sets: ex.sets, // Store the full sets array
           notes: ex.notes,
           startTime: ex.startTime || null,
           endTime: ex.endTime || null
@@ -190,10 +315,10 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
         date: getTodayEST()
       };
       
-      // Save to Firestore
+      console.log('💾 Saving workout:', JSON.stringify(workoutToSave, null, 2));
+      
       await setWorkoutExercises(workoutToSave);
       
-      // Update FareScore for workout completion
       const userId = auth.currentUser?.uid;
       if (userId) {
         await updateUserFareScoreOnLog(userId, 'logged_workout');
@@ -206,92 +331,56 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
     }
   };
 
-  const handleLoadPreset = (presetName: string) => {
-    const preset = presets.find(p => p.name === presetName);
-    if (preset) {
-      const baseTime = new Date();
-      const newExercises = preset.exercises.map((name, index) => ({
-        id: Date.now().toString() + index,
-        name,
-        sets: 3,
-        reps: 10,
-        weight: 0,
-        volume: 0,
-        notes: '',
-        startTime: undefined,
-        endTime: undefined
-      }));
-      setExercises(newExercises);
-      setWorkoutType(presetName);
-      setIsEditing(true);
-      toast.success(`${presetName} preset loaded!`);
-    }
-  };
-
-  // Set current time for exercise
   const handleSetCurrentTime = (id: string, field: 'startTime' | 'endTime') => {
     const currentTime = new Date().toISOString();
-    handleUpdateExercise(id, field, currentTime);
-    toast.success(`${field === 'startTime' ? 'Start' : 'End'} time set to current time!`);
+    handleUpdateExerciseTime(id, field, currentTime);
+    toast.success(`${field === 'startTime' ? 'Start' : 'End'} time set!`);
   };
 
-  // Handle custom time input
   const handleCustomTime = (id: string, type: 'startTime' | 'endTime', timeString: string) => {
     if (!timeString) {
-      handleUpdateExercise(id, type, undefined);
+      handleUpdateExerciseTime(id, type, undefined);
       return;
     }
 
-    // Parse the time string (expected format: "HH:MM" or "HH:MM AM/PM")
     const today = new Date();
     const [time, period] = timeString.split(' ');
     let [hours, minutes] = time.split(':').map(Number);
 
-    // Convert to 24-hour format if AM/PM is provided
     if (period) {
-      if (period.toLowerCase() === 'pm' && hours < 12) {
-        hours += 12;
-      } else if (period.toLowerCase() === 'am' && hours === 12) {
-        hours = 0;
-      }
+      if (period.toLowerCase() === 'pm' && hours < 12) hours += 12;
+      else if (period.toLowerCase() === 'am' && hours === 12) hours = 0;
     }
 
-    // Create date with today's date and the specified time
     const customDate = new Date(today);
     customDate.setHours(hours, minutes, 0, 0);
 
-    // Handle case where time might be for previous day (e.g., early morning workout)
     const currentHour = today.getHours();
-    if (currentHour < 6 && hours >= 20) { // If current time is early morning but entered time is late evening
-      customDate.setDate(customDate.getDate() - 1); // Assume it was yesterday
+    if (currentHour < 6 && hours >= 20) {
+      customDate.setDate(customDate.getDate() - 1);
     }
 
-    handleUpdateExercise(id, type, customDate.toISOString());
+    handleUpdateExerciseTime(id, type, customDate.toISOString());
     setShowTimePicker(null);
-    toast.success(`${type === 'startTime' ? 'Start' : 'End'} time set to ${formatTime(customDate.toISOString())}`);
+    toast.success(`${type === 'startTime' ? 'Start' : 'End'} time set!`);
   };
 
-  // Format time for display
   const formatTime = (isoString: string | undefined) => {
     if (!isoString) return '—';
     const date = new Date(isoString);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
-  // Get time in input format (HH:MM)
   const getTimeForInput = (isoString: string | undefined) => {
     if (!isoString) return '';
     const date = new Date(isoString);
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
-  // Calculate calories burned based on exercises and timestamps
   const handleCalculateCalories = () => {
     setIsCalculating(true);
     
-    // Simulate AI calculation
     setTimeout(() => {
-      // Calculate total duration from timestamps
       let calculatedDuration = 0;
       let earliestStart: Date | null = null;
       let latestEnd: Date | null = null;
@@ -299,7 +388,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       for (const ex of exercises) {
         if (ex.startTime) {
           const start = new Date(ex.startTime);
-          if (!isNaN(start.getTime())) { // ensure valid date
+          if (!isNaN(start.getTime())) {
             if (!earliestStart || start.getTime() < earliestStart.getTime()) {
               earliestStart = start;
             }
@@ -308,7 +397,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
 
         if (ex.endTime) {
           const end = new Date(ex.endTime);
-          if (!isNaN(end.getTime())) { // ensure valid date
+          if (!isNaN(end.getTime())) {
             if (!latestEnd || end.getTime() > latestEnd.getTime()) {
               latestEnd = end;
             }
@@ -316,33 +405,17 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
         }
       }
 
-      // Now TypeScript knows earliestStart and latestEnd are Date
       if (earliestStart && latestEnd) {
         calculatedDuration = Math.round((latestEnd.getTime() - earliestStart.getTime()) / 60000);
       }
-            
-      // Calculate calories based on:
-      // 1. Total volume lifted
-      // 2. Exercise type (compound vs isolation)
-      // 3. Duration
-      // 4. Estimated intensity
       
-      const totalVolume = exercises.reduce((sum, ex) => sum + ex.volume, 0);
-      const totalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
-      
-      // Compound exercises burn more calories
       const compoundExercises = ['bench press', 'squat', 'deadlift', 'overhead press', 'barbell row', 'pull-up'];
       const compoundCount = exercises.filter(ex => 
         compoundExercises.some(compound => ex.name.toLowerCase().includes(compound))
       ).length;
       
-      // Base calculation: ~5-8 calories per minute of strength training
       let baseCals = calculatedDuration * 6.5;
-      
-      // Bonus for volume (higher volume = more work)
-      const volumeBonus = Math.min(totalVolume / 100, 200); // Cap at 200 bonus calories
-      
-      // Bonus for compound exercises (15% more per compound exercise)
+      const volumeBonus = Math.min(totalVolume / 100, 200);
       const compoundBonus = baseCals * (compoundCount * 0.15);
       
       const estimatedCalories = Math.round(baseCals + volumeBonus + compoundBonus);
@@ -351,21 +424,18 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       setCaloriesBurned(estimatedCalories);
       setIsCalculating(false);
       
-      toast.success(`Calculated: ${estimatedCalories} calories burned in ${calculatedDuration} minutes! 🔥`);
+      toast.success(`Calculated: ${estimatedCalories} calories in ${calculatedDuration} minutes! 🔥`);
       
-      // Auto-save after calculation if we have exercises
       if (exercises.length > 0) {
         handleSaveWorkout();
       }
-    }, 1500); // Simulate processing time
+    }, 1500);
   };
 
-  // Add a function to get today's date in EST
   const getTodayEST = (): string => {
     return getDateInEasternTimezone();
   };
 
-  // Time picker component
   const TimePicker = ({ exerciseId, type, currentTime }: { exerciseId: string, type: 'start' | 'end', currentTime: string }) => {
     const [timeValue, setTimeValue] = useState(currentTime || '');
 
@@ -417,7 +487,6 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
     );
   };
 
-  // Add loading state
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--farefit-bg)' }}>
@@ -483,7 +552,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
       {/* Main Content */}
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 pb-16">
         
-        {/* 1. Workout Summary Card */}
+        {/* Workout Summary Card */}
         <div className="rounded-lg p-6 mb-6 shadow-sm transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-card)' }}>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
             <div>
@@ -520,7 +589,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
                 {duration > 0 ? duration : '—'}
               </p>
               <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>
-                {duration > 0 ? 'minutes (calculated)' : 'not calculated'}
+                {duration > 0 ? 'minutes' : 'not calculated'}
               </p>
             </div>
             
@@ -530,7 +599,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
                 {caloriesBurned > 0 ? caloriesBurned : '—'}
               </p>
               <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>
-                {caloriesBurned > 0 ? 'burned (calculated)' : 'not calculated'}
+                {caloriesBurned > 0 ? 'burned' : 'not calculated'}
               </p>
             </div>
             
@@ -554,7 +623,7 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
           </div>
         </div>
 
-        {/* 2. Exercise Log Section */}
+        {/* Exercise Log Section */}
         <div className="rounded-lg p-6 mb-6 shadow-sm transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-card)' }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="m-0" style={{ color: 'var(--farefit-text)' }}>Exercise Log</h2>
@@ -574,325 +643,257 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
           {isEditing && (
             <div className="mb-4 p-4 rounded-lg transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)', border: '1px solid var(--farefit-secondary)' }}>
               <p className="text-sm m-0" style={{ color: 'var(--farefit-text)' }}>
-                <strong>⏱️ How it works:</strong> Log your exercises with sets, reps, and weights. Click the clock icons to set custom start and end times for each exercise. You can either set the current time or enter a custom time. When done, click <strong>"Calculate Calories"</strong> to automatically estimate calories burned and total duration based on your workout data! Your workout will be automatically saved to your 30-day history.
+                <strong>⏱️ How it works:</strong> Click an exercise to expand and add multiple sets with different reps/weights. Set start and end times for each exercise. Click <strong>"Calculate Calories"</strong> to automatically estimate calories and duration. All totals are summed automatically!
               </p>
             </div>
           )}
 
-          {/* Desktop Table View */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--farefit-secondary)' }}>
-                  {isEditing && <th className="text-left p-3"></th>}
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Exercise</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Sets</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Reps</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Weight (lb)</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Volume (lb)</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Start Time</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>End Time</th>
-                  <th className="text-left p-3" style={{ color: 'var(--farefit-text)' }}>Notes</th>
-                  {isEditing && <th className="text-left p-3"></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {exercises.map((exercise) => (
-                  <tr key={exercise.id} style={{ borderBottom: '1px solid var(--farefit-border)' }}>
-                    {isEditing && (
-                      <td className="p-3">
-                        <GripVertical className="w-4 h-4 cursor-move" style={{ color: 'var(--farefit-subtext)' }} />
-                      </td>
-                    )}
-                    <td className="p-3">
-                      {isEditing ? (
-                        <Input
-                          value={exercise.name}
-                          onChange={(e) => handleUpdateExercise(exercise.id, 'name', e.target.value)}
-                          className="w-full"
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--farefit-text)' }}>{exercise.name}</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          value={exercise.sets}
-                          onChange={(e) => handleUpdateExercise(exercise.id, 'sets', parseInt(e.target.value) || 0)}
-                          className="w-20"
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--farefit-text)' }}>{exercise.sets}</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          value={exercise.reps}
-                          onChange={(e) => handleUpdateExercise(exercise.id, 'reps', parseInt(e.target.value) || 0)}
-                          className="w-20"
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--farefit-text)' }}>{exercise.reps}</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          value={exercise.weight}
-                          onChange={(e) => handleUpdateExercise(exercise.id, 'weight', parseInt(e.target.value) || 0)}
-                          className="w-24"
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--farefit-text)' }}>{exercise.weight}</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      <span style={{ color: 'var(--farefit-primary)' }}>{(exercise.volume || 0).toLocaleString()}</span>
-                    </td>
-                    <td className="p-3 relative">
-                      {isEditing ? (
-                        <div className="relative">
-                          <button
-                            onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'start' ? null : { id: exercise.id, type: 'start' })}
-                            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border"
-                            style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-primary)' }}
-                          >
-                            <Clock className="w-3 h-3" />
-                            {formatTime(exercise.startTime)}
-                          </button>
-                          {showTimePicker?.id === exercise.id && showTimePicker.type === 'start' && (
-                            <TimePicker 
-                              exerciseId={exercise.id} 
-                              type="start" 
-                              currentTime={getTimeForInput(exercise.startTime)} 
-                            />
+          {/* Exercise Cards */}
+          <div className="space-y-4">
+            {exercises.map((exercise) => {
+              const { totalReps: exReps, totalVolume: exVolume } = getExerciseTotals(exercise);
+              
+              return (
+                <div key={exercise.id} className="border rounded-lg overflow-hidden transition-colors duration-300" style={{ borderColor: 'var(--farefit-secondary)', backgroundColor: 'var(--farefit-card)' }}>
+                  {/* Exercise Header */}
+                  <div className="p-4" style={{ backgroundColor: 'var(--farefit-bg)' }}>
+                    <div className="flex items-center gap-3">
+                      {isEditing && <GripVertical className="w-5 h-5 cursor-move" style={{ color: 'var(--farefit-subtext)' }} />}
+                      
+                      <div className="flex-1">
+                        {isEditing ? (
+                          <Input
+                            value={exercise.name}
+                            onChange={(e) => handleUpdateExerciseName(exercise.id, e.target.value)}
+                            className="font-semibold mb-2"
+                            style={{ color: 'var(--farefit-text)' }}
+                          />
+                        ) : (
+                          <h3 className="m-0 mb-2" style={{ color: 'var(--farefit-text)' }}>{exercise.name}</h3>
+                        )}
+                        
+                        <div className="flex items-center gap-3 text-sm flex-wrap" style={{ color: 'var(--farefit-subtext)' }}>
+                          <span>{exercise.sets.length} set{exercise.sets.length !== 1 ? 's' : ''}</span>
+                          <span>•</span>
+                          <span>{exReps} total reps</span>
+                          <span>•</span>
+                          <span className="font-medium" style={{ color: 'var(--farefit-primary)' }}>{exVolume.toLocaleString()} lb</span>
+                          
+                          {(exercise.startTime || exercise.endTime) && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {formatTime(exercise.startTime)} - {formatTime(exercise.endTime)}
+                              </span>
+                            </>
                           )}
                         </div>
-                      ) : (
-                        <span className="text-sm" style={{ color: 'var(--farefit-text)' }}>
-                          {formatTime(exercise.startTime)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 relative">
-                      {isEditing ? (
-                        <div className="relative">
-                          <button
-                            onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'end' ? null : { id: exercise.id, type: 'end' })}
-                            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border"
-                            style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-accent)' }}
-                          >
-                            <Clock className="w-3 h-3" />
-                            {formatTime(exercise.endTime)}
-                          </button>
-                          {showTimePicker?.id === exercise.id && showTimePicker.type === 'end' && (
-                            <TimePicker 
-                              exerciseId={exercise.id} 
-                              type="end" 
-                              currentTime={getTimeForInput(exercise.endTime)} 
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-sm" style={{ color: 'var(--farefit-text)' }}>
-                          {formatTime(exercise.endTime)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {isEditing ? (
-                        <Input
-                          value={exercise.notes}
-                          onChange={(e) => handleUpdateExercise(exercise.id, 'notes', e.target.value)}
-                          placeholder="Add notes..."
-                          className="w-full"
-                        />
-                      ) : (
-                        <span className="text-sm" style={{ color: 'var(--farefit-subtext)' }}>
-                          {exercise.notes || '—'}
-                        </span>
-                      )}
-                    </td>
-                    {isEditing && (
-                      <td className="p-3">
+                      </div>
+
+                      <button
+                        onClick={() => toggleExpand(exercise.id)}
+                        className="p-2 rounded-lg transition-colors"
+                        style={{ color: 'var(--farefit-text)' }}
+                      >
+                        {exercise.isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                      </button>
+
+                      {isEditing && (
                         <button
                           onClick={() => handleRemoveExercise(exercise.id)}
-                          className="p-2 rounded transition-colors"
+                          className="p-2 rounded-lg transition-colors"
                           style={{ color: 'var(--farefit-accent)' }}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-5 h-5" />
                         </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Expanded Sets View */}
+                  {exercise.isExpanded && (
+                    <div className="p-4 space-y-3">
+                      {exercise.sets.map((set, index) => (
+                        <div key={set.id} className="flex items-center gap-3 border rounded-lg p-3" style={{ borderColor: 'var(--farefit-secondary)' }}>
+                          <span className="text-sm font-medium w-16" style={{ color: 'var(--farefit-subtext)' }}>
+                            Set {index + 1}
+                          </span>
+
+                          <div className="flex-1 grid grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-xs block mb-1" style={{ color: 'var(--farefit-subtext)' }}>Reps</label>
+                              {isEditing ? (
+                                <Input
+                                  type="number"
+                                  value={set.reps}
+                                  onChange={(e) => updateSet(exercise.id, set.id, 'reps', parseInt(e.target.value) || 0)}
+                                  className="w-full"
+                                />
+                              ) : (
+                                <div className="px-3 py-2 border rounded-lg text-sm" style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+                                  {set.reps}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-xs block mb-1" style={{ color: 'var(--farefit-subtext)' }}>Weight (lb)</label>
+                              {isEditing ? (
+                                <Input
+                                  type="number"
+                                  value={set.weight}
+                                  onChange={(e) => updateSet(exercise.id, set.id, 'weight', parseInt(e.target.value) || 0)}
+                                  className="w-full"
+                                />
+                              ) : (
+                                <div className="px-3 py-2 border rounded-lg text-sm" style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+                                  {set.weight}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-xs block mb-1" style={{ color: 'var(--farefit-subtext)' }}>Volume</label>
+                              <div className="px-3 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: 'var(--farefit-bg)', color: 'var(--farefit-primary)' }}>
+                                {set.volume.toLocaleString()} lb
+                              </div>
+                            </div>
+                          </div>
+
+                          {isEditing && exercise.sets.length > 1 && (
+                            <button
+                              onClick={() => removeSet(exercise.id, set.id)}
+                              className="p-2 rounded-lg transition-colors"
+                              style={{ color: 'var(--farefit-accent)' }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {isEditing && (
+                        <button
+                          onClick={() => addSet(exercise.id)}
+                          className="w-full py-2 border-2 border-dashed rounded-lg flex items-center justify-center gap-2 transition-colors"
+                          style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-subtext)' }}
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add Set
+                        </button>
+                      )}
+
+                      {/* Time and Notes Section */}
+                      <div className="pt-3 mt-3 space-y-3" style={{ borderTop: '1px solid var(--farefit-secondary)' }}>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="relative">
+                            <label className="text-xs block mb-1" style={{ color: 'var(--farefit-subtext)' }}>Start Time</label>
+                            {isEditing ? (
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'start' ? null : { id: exercise.id, type: 'start' })}
+                                  className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm w-full border transition-colors"
+                                  style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-primary)' }}
+                                >
+                                  <Clock className="w-3 h-3" />
+                                  {formatTime(exercise.startTime)}
+                                </button>
+                                {showTimePicker?.id === exercise.id && showTimePicker.type === 'start' && (
+                                  <TimePicker 
+                                    exerciseId={exercise.id} 
+                                    type="start" 
+                                    currentTime={getTimeForInput(exercise.startTime)} 
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <div className="px-3 py-2 border rounded-lg text-sm" style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+                                {formatTime(exercise.startTime)}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="relative">
+                            <label className="text-xs block mb-1" style={{ color: 'var(--farefit-subtext)' }}>End Time</label>
+                            {isEditing ? (
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'end' ? null : { id: exercise.id, type: 'end' })}
+                                  className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm w-full border transition-colors"
+                                  style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-accent)' }}
+                                >
+                                  <Clock className="w-3 h-3" />
+                                  {formatTime(exercise.endTime)}
+                                </button>
+                                {showTimePicker?.id === exercise.id && showTimePicker.type === 'end' && (
+                                  <TimePicker 
+                                    exerciseId={exercise.id} 
+                                    type="end" 
+                                    currentTime={getTimeForInput(exercise.endTime)} 
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <div className="px-3 py-2 border rounded-lg text-sm" style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+                                {formatTime(exercise.endTime)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs block mb-1" style={{ color: 'var(--farefit-subtext)' }}>Notes</label>
+                          {isEditing ? (
+                            <Textarea
+                              value={exercise.notes}
+                              onChange={(e) => handleUpdateExerciseNotes(exercise.id, e.target.value)}
+                              placeholder="Add notes about this exercise..."
+                              rows={2}
+                            />
+                          ) : (
+                            <div className="px-3 py-2 border rounded-lg text-sm" style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-text)' }}>
+                              {exercise.notes || '—'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          {/* Mobile Card View */}
-          <div className="md:hidden space-y-4">
-            {exercises.map((exercise) => (
-              <div
-                key={exercise.id}
-                className="border rounded-lg p-4 transition-colors duration-300"
-                style={{ borderColor: 'var(--farefit-secondary)', backgroundColor: 'var(--farefit-card)' }}
+          {exercises.length === 0 && (
+            <div className="text-center py-12">
+              <p className="mb-4" style={{ color: 'var(--farefit-subtext)' }}>No exercises yet. Start by adding one!</p>
+              <Button
+                onClick={handleAddExercise}
+                className="inline-flex items-center gap-2"
+                style={{ backgroundColor: 'var(--farefit-primary)', color: 'white' }}
               >
-                <div className="flex items-center justify-between mb-3">
-                  {isEditing ? (
-                    <Input
-                      value={exercise.name}
-                      onChange={(e) => handleUpdateExercise(exercise.id, 'name', e.target.value)}
-                      className="flex-1 mr-2"
-                    />
-                  ) : (
-                    <h4 className="m-0" style={{ color: 'var(--farefit-text)' }}>{exercise.name}</h4>
-                  )}
-                  {isEditing && (
-                    <button
-                      onClick={() => handleRemoveExercise(exercise.id)}
-                      className="p-2 rounded transition-colors"
-                      style={{ color: 'var(--farefit-accent)' }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Sets</p>
-                    {isEditing ? (
-                      <Input
-                        type="number"
-                        value={exercise.sets}
-                        onChange={(e) => handleUpdateExercise(exercise.id, 'sets', parseInt(e.target.value) || 0)}
-                      />
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{exercise.sets}</p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Reps</p>
-                    {isEditing ? (
-                      <Input
-                        type="number"
-                        value={exercise.reps}
-                        onChange={(e) => handleUpdateExercise(exercise.id, 'reps', parseInt(e.target.value) || 0)}
-                      />
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{exercise.reps}</p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Weight</p>
-                    {isEditing ? (
-                      <Input
-                        type="number"
-                        value={exercise.weight}
-                        onChange={(e) => handleUpdateExercise(exercise.id, 'weight', parseInt(e.target.value) || 0)}
-                      />
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{exercise.weight} lb</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mb-2">
-                  <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Volume</p>
-                  <p className="text-sm" style={{ color: 'var(--farefit-primary)' }}>{(exercise.volume || 0).toLocaleString()} lb</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="relative">
-                    <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Start Time</p>
-                    {isEditing ? (
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'start' ? null : { id: exercise.id, type: 'start' })}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border w-full justify-center"
-                          style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-primary)' }}
-                        >
-                          <Clock className="w-3 h-3" />
-                          {formatTime(exercise.startTime)}
-                        </button>
-                        {showTimePicker?.id === exercise.id && showTimePicker.type === 'start' && (
-                          <TimePicker 
-                            exerciseId={exercise.id} 
-                            type="start" 
-                            currentTime={getTimeForInput(exercise.startTime)} 
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{formatTime(exercise.startTime)}</p>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>End Time</p>
-                    {isEditing ? (
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowTimePicker(showTimePicker?.id === exercise.id && showTimePicker.type === 'end' ? null : { id: exercise.id, type: 'end' })}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors border w-full justify-center"
-                          style={{ borderColor: 'var(--farefit-secondary)', color: 'var(--farefit-accent)' }}
-                        >
-                          <Clock className="w-3 h-3" />
-                          {formatTime(exercise.endTime)}
-                        </button>
-                        {showTimePicker?.id === exercise.id && showTimePicker.type === 'end' && (
-                          <TimePicker 
-                            exerciseId={exercise.id} 
-                            type="end" 
-                            currentTime={getTimeForInput(exercise.endTime)} 
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>{formatTime(exercise.endTime)}</p>
-                    )}
-                  </div>
-                </div>
-
-                {(isEditing || exercise.notes) && (
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--farefit-subtext)' }}>Notes</p>
-                    {isEditing ? (
-                      <Textarea
-                        value={exercise.notes}
-                        onChange={(e) => handleUpdateExercise(exercise.id, 'notes', e.target.value)}
-                        placeholder="Add notes..."
-                        rows={2}
-                      />
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--farefit-subtext)' }}>
-                        {exercise.notes || '—'}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+                <Plus className="w-5 h-5" />
+                Add Your First Exercise
+              </Button>
+            </div>
+          )}
 
           {/* Total Summary */}
-          <div 
-            className="mt-6 pt-4 flex justify-end gap-8 transition-colors duration-300"
-            style={{ borderTop: '2px solid var(--farefit-primary)' }}
-          >
-            <div>
-              <p className="text-sm" style={{ color: 'var(--farefit-subtext)' }}>Total Volume</p>
-              <p className="text-xl" style={{ color: 'var(--farefit-primary)' }}>{totalVolume.toLocaleString()} lb</p>
+          {exercises.length > 0 && (
+            <div 
+              className="mt-6 pt-4 flex justify-end gap-8 transition-colors duration-300"
+              style={{ borderTop: '2px solid var(--farefit-primary)' }}
+            >
+              <div>
+                <p className="text-sm" style={{ color: 'var(--farefit-subtext)' }}>Total Volume</p>
+                <p className="text-xl" style={{ color: 'var(--farefit-primary)' }}>{totalVolume.toLocaleString()} lb</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* 3. Analytics Section */}
+        {/* Analytics Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Volume Progress Chart */}
           <div className="rounded-lg p-6 shadow-sm transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-card)' }}>
@@ -976,43 +977,56 @@ export function WorkoutDetailPage({ onBack, onCoachAIClick, workoutData, onSaveW
           </p>
         </div>
 
-        {/* 4. Workout Presets */}
-        <div className="rounded-lg p-6 shadow-sm transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-card)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Award className="w-5 h-5" style={{ color: 'var(--farefit-primary)' }} />
-            <h3 className="m-0" style={{ color: 'var(--farefit-text)' }}>Workout Presets</h3>
-          </div>
-          <p className="text-sm mb-4" style={{ color: 'var(--farefit-subtext)' }}>
-            Quickly load a workout template to save time logging
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {presets.map((preset) => (
-              <button
-                key={preset.name}
-                onClick={() => handleLoadPreset(preset.name)}
-                className="p-4 border-2 rounded-lg hover:shadow-md transition-all text-left"
-                style={{ borderColor: 'var(--farefit-secondary)' }}
-              >
-                <h4 className="mb-2" style={{ color: 'var(--farefit-text)' }}>{preset.name}</h4>
-                <ul className="text-sm space-y-1" style={{ color: 'var(--farefit-subtext)' }}>
-                  {preset.exercises.slice(0, 3).map((ex, idx) => (
-                    <li key={idx}>• {ex}</li>
-                  ))}
-                  {preset.exercises.length > 3 && (
-                    <li>+ {preset.exercises.length - 3} more</li>
-                  )}
-                </ul>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 p-4 rounded-lg transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-bg)' }}>
-            <p className="text-sm" style={{ color: 'var(--farefit-text)' }}>
-              💡 <strong>Tip:</strong> Create custom presets by saving your current workout as a template
+        {/* Load Previous Workout */}
+        {exercises.length === 0 && (
+          <div className="rounded-lg p-6 mb-6 shadow-sm transition-colors duration-300" style={{ backgroundColor: 'var(--farefit-card)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="w-5 h-5" style={{ color: 'var(--farefit-primary)' }} />
+              <h3 className="m-0" style={{ color: 'var(--farefit-text)' }}>Load Previous Workout</h3>
+            </div>
+            <p className="text-sm mb-4" style={{ color: 'var(--farefit-subtext)' }}>
+              Quickly load your last workout to save time logging
             </p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <button
+                onClick={() => handleLoadPreviousWorkout('Push')}
+                className="p-4 border-2 rounded-lg hover:shadow-md transition-all text-center"
+                style={{ borderColor: 'var(--farefit-secondary)', backgroundColor: 'var(--farefit-bg)' }}
+              >
+                <div className="text-3xl mb-2">💪</div>
+                <h4 className="mb-1" style={{ color: 'var(--farefit-text)' }}>Load Push Day</h4>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>
+                  Load your most recent push workout
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleLoadPreviousWorkout('Pull')}
+                className="p-4 border-2 rounded-lg hover:shadow-md transition-all text-center"
+                style={{ borderColor: 'var(--farefit-secondary)', backgroundColor: 'var(--farefit-bg)' }}
+              >
+                <div className="text-3xl mb-2">🏋️</div>
+                <h4 className="mb-1" style={{ color: 'var(--farefit-text)' }}>Load Pull Day</h4>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>
+                  Load your most recent pull workout
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleLoadPreviousWorkout('Leg')}
+                className="p-4 border-2 rounded-lg hover:shadow-md transition-all text-center"
+                style={{ borderColor: 'var(--farefit-secondary)', backgroundColor: 'var(--farefit-bg)' }}
+              >
+                <div className="text-3xl mb-2">🦵</div>
+                <h4 className="mb-1" style={{ color: 'var(--farefit-text)' }}>Load Leg Day</h4>
+                <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>
+                  Load your most recent leg workout
+                </p>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <Footer onNavigate={() => {}} onFeedbackClick={() => {}} />

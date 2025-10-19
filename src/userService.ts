@@ -23,18 +23,28 @@ interface Meal {
 
 let meals: Meal[] = [];
 
-// Interface for Exercise (based on your previous code)
-interface Exercise {
-  name: string | null;
-  sets: number;
+// Add this new interface
+interface SetData {
+  id: string;
   reps: number;
   weight: number;
+  volume: number;
+}
+
+// Update the Exercise interface
+interface Exercise {
+  name: string | null;
+  sets: SetData[];  // ✅ Changed from number to array
+  // ❌ Remove these lines:
+  // reps: number;
+  // weight: number;
+  // volume: number;  // This is now calculated from sets
   startTime: string | null;
   endTime: string | null;
   notes: string | null;
 }
 
-// Interface for a Workout Day
+// WorkoutDay interface stays the same
 interface WorkoutDay {
   day_type: string | null;
   duration: number;
@@ -43,7 +53,7 @@ interface WorkoutDay {
   total_reps: number;
   volume: number;
   exercises: Exercise[];
-  date: string; // Add date field
+  date: string;
 }
 
 export const signupUser = async (email: string, password: string, name: string) => {
@@ -155,6 +165,44 @@ export async function createUserRecords(userId: string, name: string, email: str
         }]
     });
 
+    await setDoc(doc(db, "Daily_Metric", userId), {
+      hit_calorie_goal: false,
+      hit_protein_goal: false,
+      hit_carbs_goal: false,
+      hit_fats_goal: false,
+      hit_fiber_goal: false
+    });
+
+    await setDoc(doc(db, "Food_Streak_Tracker", userId), {
+      protein_track_days: 0,
+      carbs_track_days: 0,
+      fats_track_days: 0,
+      micronutrient_track_days: 0,
+      loggedMeals_track_days: 0,
+      hyrdration_track_days: 0,
+      fiber_track_days: 0,
+      sugar_track_days: 0
+    });
+
+    await setDoc(doc(db, "Daily_Metric", userId), {
+      hit_calorie_goal: false,
+      hit_protein_goal: false,
+      hit_carbs_goal: false,
+      hit_fats_goal: false,
+      hit_fiber_goal: false
+    });
+
+    await setDoc(doc(db, "Food_Streak_Tracker", userId), {
+      protein_track_days: 0,
+      carbs_track_days: 0,
+      fats_track_days: 0,
+      micronutrient_track_days: 0,
+      loggedMeals_track_days: 0,
+      hyrdration_track_days: 0,
+      fiber_track_days: 0,
+      sugar_track_days: 0
+    });
+
     // Get real user creation date from Firebase Auth
     const auth = getAuth();
     const user = auth.currentUser;
@@ -169,7 +217,7 @@ export async function createUserRecords(userId: string, name: string, email: str
           month: 'long',
           day: 'numeric'
         });
-    
+    //
     console.log(`✅ Creating FareScore with real join date: ${actualJoinDate}`);
 
     await setDoc(doc(db, "FareScore", userId), {
@@ -196,14 +244,63 @@ export async function createUserRecords(userId: string, name: string, email: str
         volume: 0, // I dont really care about this
         exercises: [{
           name: null,
-          sets: 0,
-          reps: 0,
-          weight: 0, // to be stored in pounds
+          sets: [{
+            id: '1',
+            reps: 0,
+            weight: 0,
+            volume: 0
+          }],
           startTime: null,
           endTime: null,
           notes: null,
         }]
       }]
+    });
+
+    await setDoc(doc(db, "Weekly_Facts", userId), {
+      total_cals: 0,
+      total_burned: 0,
+      net_calories: 0,
+      total_workouts: 0,
+      days_consumed: {
+        monday: 0,
+        tuesday: 0,
+        wednesday: 0,
+        thursday: 0,
+        friday: 0,
+        saturday: 0,
+        sunday: 0,
+      },
+      days_burned: {
+        monday: 0,
+        tuesday: 0,
+        wednesday: 0,
+        thursday: 0,
+        friday: 0,
+        saturday: 0,
+        sunday: 0,
+      },
+      days_net: {
+        monday: 0,
+        tuesday: 0,
+        wednesday: 0,
+        thursday: 0,
+        friday: 0,
+        saturday: 0,
+        sunday: 0,
+      }
+    });
+
+    await setDoc(doc(db, "User_Achievements", userId), {
+      macro_master: false,
+      protein_champ: false,
+      carb_control: false,
+      fat_balance: false,
+      micronutr_minded: false,
+      clean_plate_club: false,
+      hydration_hero: false,
+      fiber_fiend: false,
+      sugar_smart: false
     });
 
 
@@ -306,6 +403,10 @@ export const addMealToDailyNutrition = async (
     meals.push({ ...sanitizedMeal, meal_date: today });
     await updateDoc(docRef, { todays_meals: meals });
     console.log("✅ Meal added successfully!");
+    
+    // 🆕 Update Weekly_Facts
+    await updateWeeklyFactsOnMealAdd(userId, sanitizedMeal.calories, sanitizedMeal.meal_date);
+    
   } catch (err) {
     console.error("❌ Error adding meal:", err);
   }
@@ -718,6 +819,7 @@ export const getWorkoutExercises = async (date?: string) => {
 };
 
 // Set workout exercises for a specific date
+// Set workout exercises for a specific date
 export const setWorkoutExercises = async (workoutData: WorkoutDay, date?: string) => {
   const auth = getAuth();
   const user = auth.currentUser;
@@ -736,29 +838,44 @@ export const setWorkoutExercises = async (workoutData: WorkoutDay, date?: string
   if (workoutDocSnap.exists()) {
     allWorkouts = workoutDocSnap.data()?.workout || [];
     
+    console.log('📊 Current workouts in DB:', allWorkouts.length);
+    console.log('📅 Target date:', targetDate);
+    console.log('📋 All dates:', allWorkouts.map(w => w.date));
+    
     // Remove existing workout for this date if it exists
-    allWorkouts = allWorkouts.filter(day => day.date !== targetDate);
+    allWorkouts = allWorkouts.filter(day => {
+      const shouldKeep = day.date !== targetDate;
+      if (!shouldKeep) {
+        console.log('🗑️ Removing existing workout for date:', day.date);
+      }
+      return shouldKeep;
+    });
+    
+    console.log('✅ Workouts after filter:', allWorkouts.length);
   }
 
-  // Add the new workout with the date
-  const workoutWithDate = {
+  // Add the new workout with the date (don't add updated_at to the workout object)
+  const workoutWithDate: WorkoutDay = {
     ...workoutData,
-    date: targetDate,
-    updated_at: Timestamp.now()
+    date: targetDate
   };
 
   // Keep only last 30 days
   allWorkouts.push(workoutWithDate);
   allWorkouts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  console.log('📦 Before slice - Total workouts:', allWorkouts.length);
   allWorkouts = allWorkouts.slice(0, 30);
+  console.log('✂️ After slice - Keeping workouts:', allWorkouts.length);
 
-  // Save to Firestore
+  // Save to Firestore - IMPORTANT: Use setDoc WITHOUT merge to replace the entire document
   await setDoc(workoutDocRef, { 
     workout: allWorkouts,
     last_updated: Timestamp.now()
-  }, { merge: true });
+  });
 
-  console.log("Workout saved for date:", targetDate);
+  console.log("✅ Workout saved for date:", targetDate);
+  console.log("💾 Total workouts now in DB:", allWorkouts.length);
 };
 
 // Check and clear workouts at midnight
@@ -819,6 +936,463 @@ export const getWorkoutHistory = async () => {
 
   const data = workoutDocSnap.data();
   return data.workout || [];
+};
+
+// Add this helper function to determine day of week from date string
+const getDayOfWeekFromDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  return days[date.getDay()];
+};
+
+// New function to update Weekly_Facts when a meal is added
+export const updateWeeklyFactsOnMealAdd = async (
+  userId: string,
+  calories: number,
+  mealDate: string
+) => {
+  try {
+    const docRef = doc(db, "Weekly_Facts", userId);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      console.error("❌ Weekly_Facts document does not exist for user:", userId);
+      return;
+    }
+
+    const data = docSnap.data();
+    const dayOfWeek = getDayOfWeekFromDate(mealDate);
+    
+    console.log(`📅 Updating Weekly_Facts for ${dayOfWeek} with ${calories} calories`);
+
+    // Update the specific day's consumed calories
+    const updatedDaysConsumed = {
+      ...data.days_consumed,
+      [dayOfWeek]: (data.days_consumed[dayOfWeek] || 0) + calories
+    };
+
+    // Calculate new totals
+    const newTotalCals = Object.values(updatedDaysConsumed).reduce((sum: number, val: any) => sum + val, 0);
+    const totalBurned = data.total_burned || 0;
+    const newNetCalories = newTotalCals - totalBurned;
+
+    // Update days_net for this specific day
+    const updatedDaysNet = {
+      ...data.days_net,
+      [dayOfWeek]: updatedDaysConsumed[dayOfWeek] - (data.days_burned[dayOfWeek] || 0)
+    };
+
+    await updateDoc(docRef, {
+      total_cals: newTotalCals,
+      net_calories: newNetCalories,
+      days_consumed: updatedDaysConsumed,
+      days_net: updatedDaysNet
+    });
+
+    console.log(`✅ Weekly_Facts updated: ${dayOfWeek} +${calories} cals, Total: ${newTotalCals}`);
+  } catch (error) {
+    console.error("❌ Error updating Weekly_Facts:", error);
+  }
+};
+
+// Function to recalculate Weekly_Facts from all meals (useful for corrections)
+export const recalculateWeeklyFacts = async (userId: string) => {
+  try {
+    const nutritionDocRef = doc(db, "Daily_Nutrition_Summary", userId);
+    const nutritionSnap = await getDoc(nutritionDocRef);
+
+    if (!nutritionSnap.exists()) {
+      console.log("No nutrition data found");
+      return;
+    }
+
+    const meals = nutritionSnap.data()?.todays_meals || [];
+    
+    // Get current week's date range (Sunday to Saturday)
+    const today = new Date();
+    const currentDay = today.getDay(); // 0 = Sunday, 6 = Saturday
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - currentDay); // Go back to Sunday
+    weekStart.setHours(0, 0, 0, 0);
+
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6); // Saturday
+    weekEnd.setHours(23, 59, 59, 999);
+
+    // Initialize days object
+    const daysConsumed = {
+      sunday: 0,
+      monday: 0,
+      tuesday: 0,
+      wednesday: 0,
+      thursday: 0,
+      friday: 0,
+      saturday: 0
+    };
+
+    // Sum up calories for each day
+    meals.forEach((meal: any) => {
+      const mealDate = new Date(meal.meal_date);
+      
+      // Only count meals from current week
+      if (mealDate >= weekStart && mealDate <= weekEnd) {
+        const dayOfWeek = getDayOfWeekFromDate(meal.meal_date);
+        daysConsumed[dayOfWeek] += meal.calories || 0;
+      }
+    });
+
+    // Calculate total
+    const totalCals = Object.values(daysConsumed).reduce((sum, val) => sum + val, 0);
+
+    // Get current Weekly_Facts to preserve burned data
+    const weeklyDocRef = doc(db, "Weekly_Facts", userId);
+    const weeklySnap = await getDoc(weeklyDocRef);
+    
+    let daysBurned = {
+      sunday: 0,
+      monday: 0,
+      tuesday: 0,
+      wednesday: 0,
+      thursday: 0,
+      friday: 0,
+      saturday: 0
+    };
+    
+    let totalBurned = 0;
+
+    if (weeklySnap.exists()) {
+      const weeklyData = weeklySnap.data();
+      daysBurned = weeklyData.days_burned || daysBurned;
+      totalBurned = weeklyData.total_burned || 0;
+    }
+
+    // Calculate net for each day
+    const daysNet: any = {};
+    Object.keys(daysConsumed).forEach(day => {
+      daysNet[day] = daysConsumed[day] - daysBurned[day];
+    });
+
+    const netCalories = totalCals - totalBurned;
+
+    // Update Weekly_Facts
+    await setDoc(weeklyDocRef, {
+      total_cals: totalCals,
+      total_burned: totalBurned,
+      net_calories: netCalories,
+      total_workouts: weeklySnap.exists() ? weeklySnap.data().total_workouts : 0,
+      days_consumed: daysConsumed,
+      days_burned: daysBurned,
+      days_net: daysNet
+    });
+
+    console.log("✅ Weekly_Facts recalculated successfully");
+  } catch (error) {
+    console.error("❌ Error recalculating Weekly_Facts:", error);
+  }
+};
+
+//  📊 Get the user's Weekly_Facts document
+export const getWeeklyFacts = async () => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error("User not logged in");
+  }
+
+  const weeklyFactsRef = doc(db, "Weekly_Facts", user.uid);
+  const weeklyFactsSnap = await getDoc(weeklyFactsRef);
+
+  if (!weeklyFactsSnap.exists()) {
+    console.warn("⚠️ No Weekly_Facts document found for this user");
+    return null;
+  }
+
+  return weeklyFactsSnap.data() as {
+    total_cals: number;
+    total_burned: number;
+    net_calories: number;
+    total_workouts: number;
+    days_consumed: Record<string, number>;
+    days_burned: Record<string, number>;
+    days_net: Record<string, number>;
+  };
+};
+
+// Please bro
+// Add this to your userService.ts file
+
+// Function to check and update daily metrics based on nutrition data
+export const updateDailyMetrics = async (userId: string) => {
+  try {
+    // Get today's nutrition data
+    const todayMeals = await getTodayMeals(userId);
+    const fitnessGoals = await getUserFitnessGoals(userId);
+    
+    if (!fitnessGoals) {
+      console.error("No fitness goals found for user:", userId);
+      return;
+    }
+
+    // Calculate totals from today's meals
+    const todayTotals = todayMeals.reduce((acc, meal) => ({
+      calories: acc.calories + (meal.calories || 0),
+      protein: acc.protein + (meal.protein || 0),
+      carbs: acc.carbs + (meal.carbs || 0),
+      fats: acc.fats + (meal.fats || 0),
+      fiber: acc.fiber + (meal.fiber || 0),
+      mealCount: acc.mealCount + 1,
+      hasFruitsVeggies: acc.hasFruitsVeggies || (meal.food_name && isFruitOrVeggie(meal.food_name))
+    }), {
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fats: 0,
+      fiber: 0,
+      mealCount: 0,
+      hasFruitsVeggies: false
+    });
+
+    // Determine which goals were hit today
+    const dailyMetrics = {
+      hit_protein_goal: todayTotals.protein >= (fitnessGoals.protein_target || 0),
+      hit_carbs_goal: todayTotals.carbs >= (fitnessGoals.carbs_target || 0) && 
+                      todayTotals.carbs <= (fitnessGoals.carbs_target || 0) * 1.2, // Within 20% range
+      hit_fats_goal: todayTotals.fats >= (fitnessGoals.fats_target || 0),
+      hit_fiber_goal: todayTotals.fiber >= (fitnessGoals.fiber_target || 0),
+      logged_full_meals: todayTotals.mealCount >= 3, // 3+ meals logged
+      had_fruits_veggies: todayTotals.hasFruitsVeggies,
+      // For hydration, we'll use dummy data for now since it's not implemented
+      hit_hydration_goal: Math.random() > 0.3, // 70% chance for demo
+      // For sugar control - assuming target is calculated or has default
+      stayed_under_sugar: todayTotals.carbs * 0.2 <= 50 // Simple sugar estimate
+    };
+
+    // Update Daily_Metric
+    const dailyMetricRef = doc(db, "Daily_Metric", userId);
+    await updateDoc(dailyMetricRef, dailyMetrics);
+
+    console.log("✅ Daily metrics updated:", dailyMetrics);
+    
+    // Update streaks based on today's performance
+    await updateFoodStreaks(userId, dailyMetrics);
+    
+  } catch (error) {
+    console.error("❌ Error updating daily metrics:", error);
+  }
+};
+
+// Helper function to check if food contains fruits/veggies (simplified)
+const isFruitOrVeggie = (foodName: string): boolean => {
+  const fruitVeggieKeywords = [
+    'apple', 'banana', 'orange', 'berry', 'grape', 'melon',
+    'broccoli', 'spinach', 'lettuce', 'carrot', 'tomato', 'pepper',
+    'onion', 'garlic', 'cucumber', 'zucchini', 'potato', 'sweet potato',
+    'avocado', 'mango', 'pineapple', 'peach', 'pear', 'plum'
+  ];
+  
+  return fruitVeggieKeywords.some(keyword => 
+    foodName.toLowerCase().includes(keyword)
+  );
+};
+
+// Update food streaks based on daily metrics
+const updateFoodStreaks = async (userId: string, dailyMetrics: any) => {
+  try {
+    const streakRef = doc(db, "Food_Streak_Tracker", userId);
+    const streakSnap = await getDoc(streakRef);
+    const achievementsRef = doc(db, "User_Achievements", userId);
+    const achievementsSnap = await getDoc(achievementsRef);
+
+    if (!streakSnap.exists() || !achievementsSnap.exists()) {
+      console.error("Missing streak tracker or achievements document");
+      return;
+    }
+
+    const currentStreaks = streakSnap.data();
+    const currentAchievements = achievementsSnap.data();
+    const updates: any = {};
+
+    // Protein streaks
+    if (dailyMetrics.hit_protein_goal) {
+      updates.protein_track_days = (currentStreaks.protein_track_days || 0) + 1;
+    } else if (!currentAchievements.macro_master && !currentAchievements.protein_champ) {
+      updates.protein_track_days = 0;
+    }
+
+    // Carbs streaks
+    if (dailyMetrics.hit_carbs_goal) {
+      updates.carbs_track_days = (currentStreaks.carbs_track_days || 0) + 1;
+    } else if (!currentAchievements.carb_control) {
+      updates.carbs_track_days = 0;
+    }
+
+    // Fats streaks
+    if (dailyMetrics.hit_fats_goal) {
+      updates.fats_track_days = (currentStreaks.fats_track_days || 0) + 1;
+    } else if (!currentAchievements.fat_balance) {
+      updates.fats_track_days = 0;
+    }
+
+    // Fiber streaks (total days, not consecutive)
+    if (dailyMetrics.hit_fiber_goal) {
+      updates.fiber_track_days = (currentStreaks.fiber_track_days || 0) + 1;
+    }
+
+    // Micronutrient (fruits/veggies) - weekly tracking
+    if (dailyMetrics.had_fruits_veggies) {
+      updates.micronutrient_track_days = (currentStreaks.micronutrient_track_days || 0) + 1;
+    }
+
+    // Full meals logged
+    if (dailyMetrics.logged_full_meals) {
+      updates.loggedMeals_track_days = (currentStreaks.loggedMeals_track_days || 0) + 1;
+    } else if (!currentAchievements.clean_plate_club) {
+      updates.loggedMeals_track_days = 0;
+    }
+
+    // Hydration
+    if (dailyMetrics.hit_hydration_goal) {
+      updates.hyrdration_track_days = (currentStreaks.hyrdration_track_days || 0) + 1;
+    } else if (!currentAchievements.hydration_hero) {
+      updates.hyrdration_track_days = 0;
+    }
+
+    // Sugar control
+    if (dailyMetrics.stayed_under_sugar) {
+      updates.sugar_track_days = (currentStreaks.sugar_track_days || 0) + 1;
+    } else if (!currentAchievements.sugar_smart) {
+      updates.sugar_track_days = 0;
+    }
+
+    // Update streaks
+    await updateDoc(streakRef, updates);
+    console.log("✅ Food streaks updated:", updates);
+
+    // Check for new achievements
+    await checkAchievements(userId, { ...currentStreaks, ...updates });
+
+  } catch (error) {
+    console.error("❌ Error updating food streaks:", error);
+  }
+};
+
+// Check and unlock achievements based on streak counts
+const checkAchievements = async (userId: string, streaks: any) => {
+  try {
+    const achievementsRef = doc(db, "User_Achievements", userId);
+    const achievementsSnap = await getDoc(achievementsRef);
+
+    if (!achievementsSnap.exists()) return;
+
+    const currentAchievements = achievementsSnap.data();
+    const newAchievements: any = {};
+
+    // Check each achievement condition
+    if (!currentAchievements.macro_master && streaks.protein_track_days >= 5) {
+      newAchievements.macro_master = true;
+    }
+
+    if (!currentAchievements.protein_champ && streaks.protein_track_days >= 30) {
+      newAchievements.protein_champ = true;
+    }
+
+    if (!currentAchievements.carb_control && streaks.carbs_track_days >= 7) {
+      newAchievements.carb_control = true;
+    }
+
+    if (!currentAchievements.fat_balance && streaks.fats_track_days >= 10) {
+      newAchievements.fat_balance = true;
+    }
+
+    if (!currentAchievements.micronutr_minded && streaks.micronutrient_track_days >= 5) {
+      newAchievements.micronutr_minded = true;
+    }
+
+    if (!currentAchievements.clean_plate_club && streaks.loggedMeals_track_days >= 7) {
+      newAchievements.clean_plate_club = true;
+    }
+
+    if (!currentAchievements.hydration_hero && streaks.hyrdration_track_days >= 7) {
+      newAchievements.hydration_hero = true;
+    }
+
+    if (!currentAchievements.fiber_fiend && streaks.fiber_track_days >= 10) {
+      newAchievements.fiber_fiend = true;
+    }
+
+    if (!currentAchievements.sugar_smart && streaks.sugar_track_days >= 7) {
+      newAchievements.sugar_smart = true;
+    }
+
+    // Update achievements if any new ones were unlocked
+    if (Object.keys(newAchievements).length > 0) {
+      await updateDoc(achievementsRef, newAchievements);
+      console.log("🎉 New achievements unlocked:", newAchievements);
+      
+      // Update FareScore for achievements
+      const achievementCount = Object.values(newAchievements).filter(Boolean).length;
+      await updateUserFareScoreOnLog(userId, `achievement_unlocked_${achievementCount}`);
+    }
+
+  } catch (error) {
+    console.error("❌ Error checking achievements:", error);
+  }
+};
+
+// Function to get user achievements
+export const getUserAchievements = async (userId: string) => {
+  try {
+    const achievementsRef = doc(db, "User_Achievements", userId);
+    const achievementsSnap = await getDoc(achievementsRef);
+
+    if (!achievementsSnap.exists()) {
+      return null;
+    }
+
+    return achievementsSnap.data();
+  } catch (error) {
+    console.error("❌ Error fetching user achievements:", error);
+    return null;
+  }
+};
+
+// Function to get food streaks
+export const getFoodStreaks = async (userId: string) => {
+  try {
+    const streakRef = doc(db, "Food_Streak_Tracker", userId);
+    const streakSnap = await getDoc(streakRef);
+
+    if (!streakSnap.exists()) {
+      return null;
+    }
+
+    return streakSnap.data();
+  } catch (error) {
+    console.error("❌ Error fetching food streaks:", error);
+    return null;
+  }
+};
+
+// Reset streaks at midnight (call this in a daily cron job)
+export const resetDailyMetrics = async (userId: string) => {
+  try {
+    const dailyMetricRef = doc(db, "Daily_Metric", userId);
+    await updateDoc(dailyMetricRef, {
+      hit_protein_goal: false,
+      hit_carbs_goal: false,
+      hit_fats_goal: false,
+      hit_fiber_goal: false,
+      logged_full_meals: false,
+      had_fruits_veggies: false,
+      hit_hydration_goal: false,
+      stayed_under_sugar: false
+    });
+    
+    console.log("✅ Daily metrics reset for new day");
+  } catch (error) {
+    console.error("❌ Error resetting daily metrics:", error);
+  }
 };
 
 // ============================================================================
