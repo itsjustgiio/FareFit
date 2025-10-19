@@ -6,6 +6,7 @@ import { Switch } from './ui/switch';
 import logoImage from 'figma:asset/77bf03e5d71328d3253fb9c4f7bef47edf94924a.png';
 import { updateFitnessGoals } from '../userService';
 import { getAuth } from 'firebase/auth';
+import { validateBirthDate, getMaxBirthDate, getMinBirthDate } from '../utils/validation';
 
 interface OnboardingFlowProps {
   onComplete: (data: OnboardingData) => void;
@@ -367,9 +368,19 @@ function BirthdayScreen({
   onContinue: () => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const auth = getAuth();
 
   const handleBirthdaySelect = async (birthday: string) => {
+    // Validate the birth date
+    const validationError = validateBirthDate(birthday);
+    setError(validationError);
+    
+    if (validationError) {
+      // Don't proceed if validation fails
+      return;
+    }
+
     onChange(birthday); // update local state
     setLoading(true);
 
@@ -394,10 +405,14 @@ function BirthdayScreen({
       setTimeout(onContinue, 300); // move to next onboarding step
     } catch (error) {
       console.error("Error updating birthday:", error);
+      setError("Failed to save birth date. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Check if current value is valid
+  const isValidDate = value && !validateBirthDate(value);
 
   return (
     <motion.div
@@ -410,23 +425,42 @@ function BirthdayScreen({
       <h2 className="text-2xl mb-3 text-center" style={{ color: "#102A43" }}>
         When were you born?
       </h2>
-      <p className="text-center mb-8" style={{ color: "#102A43", opacity: 0.6 }}>
+      <p className="text-center mb-2" style={{ color: "#102A43", opacity: 0.6 }}>
         This helps calculate your age for your calorie and fitness targets
+      </p>
+      <p className="text-center mb-8 text-sm" style={{ color: "#102A43", opacity: 0.5 }}>
+        You must be at least 13 years old to use this app
       </p>
 
       <div className="flex flex-col items-center space-y-4">
         <input
+          id="birthdate-input"
           type="date"
           value={value || ""}
+          min={getMinBirthDate()} // 120 years ago
+          max={getMaxBirthDate()} // Today
           onChange={(e) => handleBirthdaySelect(e.target.value)}
-          className="border border-[#A8E6CF] rounded-xl px-4 py-3 text-center"
+          className={`border rounded-xl px-4 py-3 text-center ${
+            error ? 'border-red-500' : 'border-[#A8E6CF]'
+          }`}
           style={{ color: "#102A43" }}
         />
 
+        {/* Error message display */}
+        {error && (
+          <div className="text-red-500 text-sm text-center bg-red-50 px-4 py-2 rounded-lg border border-red-200">
+            {error}
+          </div>
+        )}
+
         <button
           onClick={onContinue}
-          disabled={!value || loading}
-          className="mt-6 px-8 py-3 rounded-xl bg-[#1C7C54] text-white"
+          disabled={!isValidDate || loading}
+          className={`mt-6 px-8 py-3 rounded-xl text-white transition-all ${
+            !isValidDate || loading 
+              ? 'bg-gray-400 cursor-not-allowed' 
+              : 'bg-[#1C7C54] hover:bg-[#156B47]'
+          }`}
         >
           {loading ? "Saving..." : "Continue"}
         </button>
@@ -557,7 +591,7 @@ function HeightScreen({
         <Slider
           key={unit} // ensures slider re-renders on unit change
           value={[sliderValue]}
-          onValueChange={(values) => handleHeightChange(values[0])}
+          onValueChange={(values: number[]) => handleHeightChange(values[0])} // 👈 Added type annotation
           min={sliderMin}
           max={sliderMax}
           step={sliderStep}
