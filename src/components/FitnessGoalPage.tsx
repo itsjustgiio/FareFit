@@ -5,7 +5,7 @@ import { Label } from './ui/label';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner'; // 👈 Fixed: removed version specification
 
 interface FitnessGoalPageProps {
   onBack: () => void;
@@ -312,7 +312,7 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
                     : 'hover:shadow-md'
                 }`}
                 style={{
-                  ringColor: selectedGoal === goal.id ? goal.color : 'transparent'
+                  borderColor: selectedGoal === goal.id ? goal.color : 'transparent' // 👈 Fixed: changed ringColor to borderColor
                 }}
               >
                 {selectedGoal === goal.id && (
@@ -436,7 +436,7 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
               <Label htmlFor="gender" style={{ color: '#102A43' }}>
                 Gender
               </Label>
-              <Select value={gender} onValueChange={(value) => setGender(value as 'male' | 'female')}>
+              <Select value={gender} onValueChange={(value: string) => setGender(value as 'male' | 'female')}> {/* 👈 Added type annotation */}
                 <SelectTrigger className="mt-2 rounded-xl" style={{ backgroundColor: '#FBEBD9' }}>
                   <SelectValue />
                 </SelectTrigger>

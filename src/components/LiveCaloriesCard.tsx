@@ -7,7 +7,7 @@ interface LiveCaloriesCardProps {
 }
 
 export function LiveCaloriesCard({ onMealLoggingClick, onFoodAssistantClick }: LiveCaloriesCardProps) {
-  const { meals, loading, error, totalNutrition, getTodaysMeals, getRecentMeals } = useUserMeals();
+  const { meals, loading, totals } = useUserMeals(); // 👈 Fixed: use correct properties from useUserMeals
 
   if (loading) {
     return (
@@ -21,17 +21,8 @@ export function LiveCaloriesCard({ onMealLoggingClick, onFoodAssistantClick }: L
     );
   }
 
-  if (error) {
-    return (
-      <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-        <h2 className="text-lg font-semibold mb-4 text-gray-900">CALORIES CONSUMED</h2>
-        <p className="text-red-500">Error loading meals: {error}</p>
-      </div>
-    );
-  }
-
-  const todaysMeals = getTodaysMeals();
-  const recentMeals = getRecentMeals(3);
+  // Remove error handling since useUserMeals doesn't return error
+  // const todaysMeals and recentMeals will use the meals data directly
   const hasAnyMeals = meals.length > 0;
 
   return (
@@ -67,23 +58,23 @@ export function LiveCaloriesCard({ onMealLoggingClick, onFoodAssistantClick }: L
           <div className="mb-6">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Today's Nutrition</h3>
             <div className="text-2xl font-bold text-gray-900 mb-2">
-              🔥 {totalNutrition.calories.toFixed(0)} kcal
+              🔥 {totals.calories.toFixed(0)} kcal {/* 👈 Changed totalNutrition to totals */}
             </div>
             <div className="text-sm text-gray-600 space-y-1">
-              <div>🥩 {totalNutrition.protein.toFixed(1)}g protein</div>
-              <div>🍞 {totalNutrition.carbs.toFixed(1)}g carbs</div>
-              <div>🧈 {totalNutrition.fats.toFixed(1)}g fat</div>
-              <div>🌾 {totalNutrition.fiber.toFixed(1)}g fiber</div>
+              <div>🥩 {totals.protein.toFixed(1)}g protein</div>
+              <div>🍞 {totals.carbs.toFixed(1)}g carbs</div>
+              <div>🧈 {totals.fat.toFixed(1)}g fat</div> {/* 👈 Changed fats to fat */}
+              <div>🌾 {totals.fiber.toFixed(1)}g fiber</div>
             </div>
           </div>
 
-          {/* Recent Meals */}
-          {recentMeals.length > 0 && (
+          {/* Recent Meals - use meals data directly */}
+          {meals.length > 0 && (
             <div className="mb-4">
               <h3 className="text-sm font-medium text-gray-700 mb-3">Recent Meals</h3>
               <div className="space-y-2">
-                {recentMeals.map((meal) => (
-                  <div key={meal.id} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
+                {meals.slice(0, 3).map((meal: any, index: number) => (
+                  <div key={`${meal.food_name}-${meal.meal_type}-${index}`} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
                     <div className="flex-1">
                       <div className="text-sm font-medium text-gray-900">
                         {meal.food_name}
@@ -120,7 +111,7 @@ export function LiveCaloriesCard({ onMealLoggingClick, onFoodAssistantClick }: L
           {/* Meal Count Indicator */}
           <div className="mt-4 text-center">
             <span className="text-xs text-gray-500">
-              {todaysMeals.length} meal{todaysMeals.length !== 1 ? 's' : ''} today • {meals.length} total logged
+              {meals.length} meal{meals.length !== 1 ? 's' : ''} today • {meals.length} total logged {/* 👈 Use meals.length directly */}
             </span>
           </div>
         </div>
