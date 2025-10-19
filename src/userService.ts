@@ -556,6 +556,7 @@ export const addMealToDailyNutrition = async (
   }
 };
 
+// In userService.ts, in getTodayMeals function, add array checking:
 export const getTodayMeals = async (userId: string) => {
     const docRef = doc(db, "Daily_Nutrition_Summary", userId);
     const docSnap = await getDoc(docRef);
@@ -564,6 +565,12 @@ export const getTodayMeals = async (userId: string) => {
     if (!docSnap.exists()) return [];
 
     const meals = docSnap.data()?.todays_meals || [];
+    
+    // Add this check:
+    if (!Array.isArray(meals)) {
+      return [];
+    }
+    
     const todaysMeals = meals.filter((meal: any) => meal.meal_date === today);
     
     // Sanitize any existing bad data when loading

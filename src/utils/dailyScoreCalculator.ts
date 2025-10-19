@@ -16,19 +16,41 @@ export interface DailyScoreData {
  * Calculate today's score based on user activities
  */
 export const calculateDailyScore = async (userId: string): Promise<DailyScoreData> => {
-  // Import your userService functions
-  const { getTodayMeals, getWorkoutExercises, getUserFitnessGoals, updateDailyMetrics } = await import('../userService');
-  
   try {
-    // Get today's data
-    const todayMeals = await getTodayMeals(userId);
-    const workoutData = await getWorkoutExercises();
-    const fitnessGoals = await getUserFitnessGoals(userId);
+    // Import your userService functions
+    const { getTodayMeals, getWorkoutExercises, getUserFitnessGoals, updateDailyMetrics } = await import('../userService');
+    
+    // Get today's data with error handling
+    let todayMeals: any[] = [];
+    let workoutData: any = null; // Use any type for workoutData
+    let fitnessGoals: any = null; // Use any type for fitnessGoals
+    
+    try {
+      const mealsResult = await getTodayMeals(userId);
+      todayMeals = Array.isArray(mealsResult) ? mealsResult : [];
+    } catch (error) {
+      console.error('Error fetching meals:', error);
+      todayMeals = [];
+    }
+    
+    try {
+      workoutData = await getWorkoutExercises();
+    } catch (error) {
+      console.error('Error fetching workout:', error);
+      workoutData = { workout: [] };
+    }
+    
+    try {
+      fitnessGoals = await getUserFitnessGoals(userId);
+    } catch (error) {
+      console.error('Error fetching fitness goals:', error);
+      fitnessGoals = null;
+    }
     
     // Calculate base scores
     const mealsLogged = calculateMealsScore(todayMeals);
     const workoutCompleted = calculateWorkoutScore(workoutData);
-    const macrosHit = await calculateMacrosScore(todayMeals, fitnessGoals, userId); // Pass userId here
+    const macrosHit = await calculateMacrosScore(todayMeals, fitnessGoals, userId);
     
     // Calculate bonus (your specific logic)
     const consistencyBonus = calculateBonus(mealsLogged, workoutCompleted, macrosHit);
@@ -56,7 +78,7 @@ export const calculateDailyScore = async (userId: string): Promise<DailyScoreDat
  * Calculate meals logged score (max 30 points)
  */
 const calculateMealsScore = (meals: any[]): { earned: number; max: number } => {
-  const mealCount = meals?.length || 0;
+  const mealCount = Array.isArray(meals) ? meals.length : 0;
   
   // 10 points per meal, max 3 meals = 30 points
   const earned = Math.min(mealCount * 10, 30);
@@ -68,7 +90,9 @@ const calculateMealsScore = (meals: any[]): { earned: number; max: number } => {
  * Calculate workout score (max 30 points)
  */
 const calculateWorkoutScore = (workoutData: any): { earned: number; max: number } => {
-  const hasWorkout = workoutData?.workout?.length > 0;
+  // Handle different possible return types from getWorkoutExercises
+  const workoutArray = workoutData?.workout || [];
+  const hasWorkout = Array.isArray(workoutArray) && workoutArray.length > 0;
   
   // 30 points for any workout completed
   return { earned: hasWorkout ? 30 : 0, max: 30 };
@@ -78,22 +102,27 @@ const calculateWorkoutScore = (workoutData: any): { earned: number; max: number 
  * Calculate macros hit score (max 25 points)
  */
 const calculateMacrosScore = async (meals: any[], fitnessGoals: any, userId: string): Promise<{ earned: number; max: number }> => {
-  if (!fitnessGoals || !meals?.length) {
+  if (!fitnessGoals || !Array.isArray(meals) || meals.length === 0) {
     return { earned: 0, max: 25 };
   }
   
-  // Update daily metrics to get current macro status
-  const { updateDailyMetrics } = await import('../userService');
-  await updateDailyMetrics(userId); // Now userId is available
-  
-  // For now, return a simplified version - you can enhance this later
-  const totalProtein = meals.reduce((sum, meal) => sum + (meal.protein || 0), 0);
-  const proteinTarget = fitnessGoals.protein_target || 0;
-  
-  // 25 points if protein target is met (simplified for now)
-  const earned = totalProtein >= proteinTarget ? 25 : 0;
-  
-  return { earned, max: 25 };
+  try {
+    // Update daily metrics to get current macro status
+    const { updateDailyMetrics } = await import('../userService');
+    await updateDailyMetrics(userId);
+    
+    // Simplified macro check - you can enhance this later
+    const totalProtein = meals.reduce((sum, meal) => sum + (Number(meal.protein) || 0), 0);
+    const proteinTarget = Number(fitnessGoals.protein_target) || 0;
+    
+    // 25 points if protein target is met (simplified for now)
+    const earned = totalProtein >= proteinTarget ? 25 : 0;
+    
+    return { earned, max: 25 };
+  } catch (error) {
+    console.error('Error calculating macros score:', error);
+    return { earned: 0, max: 25 };
+  }
 };
 
 /**

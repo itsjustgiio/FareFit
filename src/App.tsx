@@ -585,7 +585,7 @@ export default function App() {
       unsubscribe();
     };
   }, [isDemoMode, currentUser]); // Re-run when demo mode or user changes
-
+  /*
   // Calculate Daily Score (0-100) - represents today's progress toward max points
   const getDailyScoreBreakdown = (): DailyScoreBreakdown => {
     if (!userGoal) {
@@ -607,10 +607,8 @@ export default function App() {
   };
 
   const dailyScoreBreakdown = getDailyScoreBreakdown();
-  const dailyScore = dailyScoreBreakdown.mealsLogged.earned + 
-                   dailyScoreBreakdown.workoutCompleted.earned + 
-                   dailyScoreBreakdown.macrosHit.earned + 
-                   dailyScoreBreakdown.consistencyBonus.earned;
+  const dailyScore = dailyScoreBreakdown.total;
+  */
 
   // Demo mode - quick access for testing (remove in production)
   const handleDemoLogin = () => {
@@ -1107,8 +1105,8 @@ export default function App() {
         <ScoreCards
           fareScore={fareScore}
           fareScoreChange={fareScoreChange}
-          dailyScore={dailyScore}
-          userId={currentUser.uid} // Add this
+          dailyScore={0}
+          userId={currentUser?.uid || ''} // Add this
           onFareScoreClick={() => setCurrentPage('account')}
           isDemoMode={isDemoMode}
         />
