@@ -15,6 +15,7 @@ import { BarcodeScannerCamera } from './BarcodeScannerCamera';
 import { NutritionLabelCamera } from './NutritionLabelCamera';
 import { fetchProductByBarcode, isValidBarcode } from '../services/barcodeScannerService';
 import { getGeminiService } from '../services/geminiService';
+import { analyzeMealDescription } from '../services/mealParsingService';
 
 interface FoodItem {
   id: string;
@@ -1894,91 +1895,23 @@ function AskFoodAITab({ onMealParsed }: any) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [parsedMeal, setParsedMeal] = useState<any>(null);
 
-  const handleAskAI = () => {
+  const handleAskAI = async () => {
     if (!userInput.trim()) {
-      toast.error('Please describe your meal');
+      toast.error("Please describe your meal");
       return;
     }
 
     setIsProcessing(true);
-
-    setTimeout(() => {
-      setParsedMeal({
-        name: 'Protein Shake',
-        items: [
-          {
-            id: '1',
-            name: 'Almond Milk',
-            servingSize: '1 cup',
-            amountConsumed: 1,
-            baseCalories: 30,
-            baseProtein: 1,
-            baseCarbs: 1,
-            baseFat: 2.5,
-            baseFiber: 1,
-            calories: 30,
-            protein: 1,
-            carbs: 1,
-            fat: 2.5,
-            fiber: 1,
-            isExpanded: false,
-          },
-          {
-            id: '2',
-            name: 'Whey Protein Powder',
-            servingSize: '1 scoop (30g)',
-            amountConsumed: 1,
-            baseCalories: 120,
-            baseProtein: 24,
-            baseCarbs: 3,
-            baseFat: 1,
-            baseFiber: 1,
-            calories: 120,
-            protein: 24,
-            carbs: 3,
-            fat: 1,
-            fiber: 1,
-            isExpanded: false,
-          },
-          {
-            id: '3',
-            name: 'Banana',
-            servingSize: '1 medium',
-            amountConsumed: 1,
-            baseCalories: 105,
-            baseProtein: 1,
-            baseCarbs: 27,
-            baseFat: 0,
-            baseFiber: 3,
-            calories: 105,
-            protein: 1,
-            carbs: 27,
-            fat: 0,
-            fiber: 3,
-            isExpanded: false,
-          },
-          {
-            id: '4',
-            name: 'Peanut Butter',
-            servingSize: '1 tbsp',
-            amountConsumed: 1,
-            baseCalories: 95,
-            baseProtein: 4,
-            baseCarbs: 3,
-            baseFat: 8,
-            baseFiber: 1,
-            calories: 95,
-            protein: 4,
-            carbs: 3,
-            fat: 8,
-            fiber: 1,
-            isExpanded: false,
-          },
-        ],
-      });
+    try {
+      const aiResponse = await analyzeMealDescription(userInput);
+      setParsedMeal(aiResponse);
+      toast.success("AI parsed your meal into items!");
+    } catch (err) {
+      console.error("AI parsing error:", err);
+      toast.error("AI couldn't understand your meal. Try again!");
+    } finally {
       setIsProcessing(false);
-      toast.success('AI parsed your meal into items!');
-    }, 1800);
+    }
   };
 
   const handleUseItems = () => {
