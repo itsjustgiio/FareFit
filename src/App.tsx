@@ -12,7 +12,8 @@ import { ProgressPage } from './components/ProgressPage';
 import { HelpPage } from './components/HelpPage';
 import { PrivacyPage } from './components/PrivacyPage';
 import { TermsPage } from './components/TermsPage';
-import { FitnessGoalPage, GoalData } from './components/FitnessGoalPage';
+import { SimpleFitnessGoalPage } from './components/SimpleFitnessGoalPage';
+import { GoalData } from './components/FitnessGoalPage';
 import { CoachAIPage } from './components/CoachAIPage';
 import { FoodAssistantPage } from './components/FoodAssistantPage';
 import { WorkoutDetailPage, WorkoutData } from './components/WorkoutDetailPage';
@@ -29,13 +30,16 @@ import { AccountPage } from './components/AccountPage';
 import { ScoreCards } from './components/ScoreCards';
 import DevToolsPage from './components/DevToolsPage';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
-import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardingStatus, setOnboardingComplete, migrateOnboardingStatus } from './userService';
+import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardingStatus, setOnboardingComplete, migrateOnboardingStatus, getUserActivePlanSummary, getUserProfile } from './userService';
+
 import { log } from 'node:util';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase'; // your Firebase setup
 import { onSnapshot, doc, getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { checkAndClearDailyWorkout } from './userService';
+import type { PlanSummary, UserPlan } from './types/planTypes';
+import { PlanGeneratedModal } from './components/PlanGeneratedModal';
 
 interface User {
   email: string;
@@ -69,6 +73,7 @@ export default function App() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [authView, setAuthView] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'app'>('landing');
 
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai' | 'food-assistant' | 'workout-detail' | 'daily-timeline' | 'meal-logging' | 'account' | 'dev-tools'>('dashboard');
@@ -76,6 +81,27 @@ export default function App() {
   const [isFitnessScoreOpen, setIsFitnessScoreOpen] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
+
+  // Fetch complete user profile when authenticated
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      console.log('🔍 Profile fetch effect triggered - isAuthenticated:', isAuthenticated, 'currentUser:', auth.currentUser?.uid);
+      if (isAuthenticated && auth.currentUser) {
+        console.log('🔍 Fetching complete user profile for user:', auth.currentUser.uid);
+        try {
+          const profile = await getUserProfile(auth.currentUser.uid);
+          console.log('👤 Complete user profile received:', profile);
+          setUserProfile(profile);
+        } catch (error) {
+          console.error('❌ Error fetching user profile:', error);
+        }
+      } else {
+        console.log('⏸️ Skipping profile fetch - not authenticated or no user');
+      }
+    };
+
+    fetchUserProfile();
+  }, [isAuthenticated, auth.currentUser]);
 
   // Check for existing session on mount
   useEffect(() => {
@@ -106,6 +132,12 @@ export default function App() {
         
         setUser(userData);
         setIsAuthenticated(true);
+        
+        // Load user's plan if authenticated and onboarding complete
+        if (userData.onboardingComplete && currentUser) {
+          await loadUserPlan(currentUser.uid);
+        }
+        
         setAuthView(userData.onboardingComplete ? 'app' : 'onboarding');
       }
     };
@@ -156,6 +188,11 @@ export default function App() {
       // Update state
       setUser(loggedInUser);
       setIsAuthenticated(true);
+
+      // Load user's plan if onboarding is complete
+      if (loggedInUser.onboardingComplete) {
+        await loadUserPlan(firebaseUser.uid);
+      }
 
       // Decide whether to go to onboarding or app
       setAuthView(loggedInUser.onboardingComplete ? "app" : "onboarding");
@@ -223,6 +260,12 @@ export default function App() {
       // 3. Update app state
       setUser(loggedInUser);
       setIsAuthenticated(true);
+      
+      // Load user's plan if onboarding is complete
+      if (loggedInUser.onboardingComplete) {
+        await loadUserPlan(firebaseUser.uid);
+      }
+      
       setAuthView(loggedInUser.onboardingComplete ? 'app' : 'onboarding');
 
     } catch (error: any) {
@@ -275,6 +318,69 @@ export default function App() {
     }
   };
 
+  // Load user's AI plan summary
+  const loadUserPlan = async (userId: string) => {
+    if (!userId) return;
+    
+    try {
+      setIsLoadingPlan(true);
+      console.log('📋 Loading user plan summary...');
+      
+      const planSummary = await getUserActivePlanSummary(userId);
+      setPlanSummary(planSummary);
+      
+      if (planSummary) {
+        console.log('✅ Plan summary loaded:', planSummary);
+      } else {
+        console.log('📭 No active plan found for user');
+      }
+    } catch (error) {
+      console.error('❌ Error loading user plan:', error);
+    } finally {
+      setIsLoadingPlan(false);
+    }
+  };
+
+  // Handle plan generation completion
+  const handlePlanGenerated = async (plan: UserPlan) => {
+    console.log('🎯 Plan generated successfully:', plan.id);
+    console.log('🎯 Plan details received:', {
+      goalType: plan.goalType,
+      targetCalories: plan.targetCalories,
+      tdee: plan.tdee,
+      macros: plan.macros
+    });
+    console.log('🔍 Debug - hasSeenPlanModal:', hasSeenPlanModal);
+    console.log('🔍 Debug - localStorage hasSeenPlanModal:', localStorage.getItem('hasSeenPlanModal'));
+    
+    // Only show modal for first-time users
+    if (!hasSeenPlanModal) {
+      console.log('📋 Setting up modal for first-time user with plan data:', plan);
+      setGeneratedPlan(plan);
+      setShowPlanModal(true);
+      console.log('📋 Modal state set - generatedPlan set, showPlanModal:', true);
+    } else {
+      console.log('📋 Skipping plan modal - user has seen it before');
+    }
+    
+    // Fitness goals are automatically updated during plan generation
+    // Just reload the plan summary to reflect the changes
+    if (user) {
+      try {
+        const auth = await import('./firebase').then(m => m.auth);
+        const currentUser = auth.currentUser;
+        
+        if (currentUser) {
+          // Reload plan summary to reflect the updated data
+          await loadUserPlan(currentUser.uid);
+          console.log('✅ Plan summary reloaded');
+        }
+      } catch (error) {
+        console.error('❌ Error reloading plan:', error);
+      }
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await signOut(auth); // sign out from Firebase
@@ -311,6 +417,19 @@ export default function App() {
   const [userGoal, setUserGoal] = useState<GoalData | null>(() => {
     const saved = localStorage.getItem('fitnessGoal');
     return saved ? JSON.parse(saved) : null;
+  });
+
+  // AI Plan state management
+  const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
+  const [isLoadingPlan, setIsLoadingPlan] = useState(false);
+  
+  // Plan Generated Modal state (for dashboard)
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [generatedPlan, setGeneratedPlan] = useState<UserPlan | null>(null);
+  
+  // Track if user has seen plan explanation modal before
+  const [hasSeenPlanModal, setHasSeenPlanModal] = useState(() => {
+    return localStorage.getItem('hasSeenPlanModal') === 'true';
   });
 
   // Load workout data from localStorage
@@ -609,10 +728,50 @@ export default function App() {
     return 'Dashboard';
   };
 
-  const handleSaveGoal = (goalData: GoalData) => {
+  const handleSaveGoal = async (goalData: GoalData) => {
+    console.log('💾 Saving goal data to Fitness_Goals collection:', goalData);
     setUserGoal(goalData);
-    // Here you would also save to localStorage or backend
-    localStorage.setItem('fitnessGoal', JSON.stringify(goalData));
+    
+    try {
+      // Save to localStorage for immediate use
+      localStorage.setItem('fitnessGoal', JSON.stringify(goalData));
+      
+      // Save to Firestore Fitness_Goals collection using exact field names
+      if (auth.currentUser) {
+        const { doc, updateDoc, Timestamp } = await import('firebase/firestore');
+        const { db } = await import('./firebase');
+        
+        const fitnessGoalRef = doc(db, "Fitness_Goals", auth.currentUser.uid);
+        await updateDoc(fitnessGoalRef, {
+          age: goalData.age,
+          gender: goalData.gender,
+          height: goalData.height,
+          weight: goalData.weight,
+          activity_level: goalData.activityLevel,
+          goal_type: goalData.goalType,
+          tdee: goalData.tdee,
+          target_calories: goalData.targetCalories,
+          protein_target: goalData.protein,
+          carbs_target: goalData.carbs,
+          fats_target: goalData.fat,
+          fiber_target: goalData.fiber,
+          updated_at: Timestamp.now(),
+          is_active: true
+        });
+        console.log('✅ Goal data saved to Fitness_Goals collection with correct field names');
+        
+        // Add a small delay to ensure Firestore has processed the update
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Refresh user profile to reflect changes
+        console.log('🔄 Refreshing user profile after goal save...');
+        const updatedProfile = await getUserProfile(auth.currentUser.uid);
+        console.log('👤 Updated profile after goal save:', updatedProfile);
+        setUserProfile(updatedProfile);
+      }
+    } catch (error) {
+      console.error('❌ Error saving goal data:', error);
+    }
   };
 
   const handleSaveWorkout = (workout: WorkoutData) => {
@@ -735,11 +894,21 @@ export default function App() {
   if (currentPage === 'fitness-goal') {
     return (
       <>
-        <FitnessGoalPage 
+        <SimpleFitnessGoalPage 
           onBack={() => setCurrentPage('dashboard')} 
           onSaveGoal={handleSaveGoal}
-          onNavigate={setCurrentPage}
+          onNavigate={(page: string) => setCurrentPage(page as typeof currentPage)}
           onFeedbackClick={() => setIsFeedbackOpen(true)}
+          onPlanGenerated={handlePlanGenerated}
+          userId={auth.currentUser?.uid}
+          userProfile={userProfile ? {
+            age: userProfile.age,
+            weight: userProfile.weight,
+            height: userProfile.height, 
+            gender: userProfile.gender,
+            activityLevel: userProfile.activityLevel,
+            goalType: userProfile.goalType
+          } : undefined}
         />
         <FeedbackModal 
           isOpen={isFeedbackOpen} 
@@ -849,7 +1018,7 @@ export default function App() {
   }
 
   // Dev tools page (development only)
-  if (currentPage === 'dev-tools' && import.meta.env.DEV) {
+  if (currentPage === 'dev-tools' && (import.meta as any).env.DEV) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: 'var(--farefit-bg)' }}>
         <Header 
@@ -925,6 +1094,7 @@ export default function App() {
             onFoodAIClick={() => setCurrentPage('food-assistant')}
             onLogMealClick={() => setCurrentPage('meal-logging')}
             userGoal={userGoal}
+            planSummary={planSummary}
           />
           <MealsCard 
             onViewTimeline={() => setCurrentPage('daily-timeline')}
@@ -948,17 +1118,120 @@ export default function App() {
           onCoachAIClick={() => setCurrentPage('coach-ai')}
           onFoodAssistantClick={() => setCurrentPage('food-assistant')}
           userGoal={userGoal}
+          planSummary={planSummary}
         />
       </div>
       
+
+      
       {/* Dev Tools Button (development only) */}
-      {import.meta.env.DEV && (
-        <div className="px-4 py-2">
+      {(import.meta as any).env.DEV && (
+        <div className="px-4 py-2 space-y-2">
           <button 
             onClick={() => setCurrentPage('dev-tools')}
             className="w-full bg-orange-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-orange-600 transition-colors"
           >
             🛠️ Dev Tools (Check Meals)
+          </button>
+          <button 
+            onClick={() => {
+              // Clear localStorage
+              localStorage.removeItem('hasSeenPlanModal');
+              
+              // Reset state
+              setHasSeenPlanModal(false);
+              
+              // Clear any existing modal state
+              setShowPlanModal(false);
+              setGeneratedPlan(null);
+              
+              // Force a re-render
+              console.log('🔄 Reset first-time user status');
+              console.log('🔍 localStorage after reset:', localStorage.getItem('hasSeenPlanModal'));
+              console.log('🔍 hasSeenPlanModal state after reset:', false);
+              
+              alert('✅ Reset complete! Generate a new plan to see the modal.');
+            }}
+            className="w-full bg-purple-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-purple-600 transition-colors"
+          >
+            🔄 Reset First-Time Modal
+          </button>
+          <button 
+            onClick={async () => {
+              console.log('🧪 Testing AI plan generation manually...');
+              
+              // Simulate the plan generation with your data
+              const testUserData = {
+                age: 20,
+                weight: 72.57, // 160 lbs to kg
+                height: 178, // 5'10" to cm
+                gender: 'male' as const,
+                activityLevel: '1.4', // moderately active (lowered from 1.55)
+                goalType: 'maintain' as const
+              };
+              
+              console.log('🧪 Test user data:', testUserData);
+              
+              // Get current user
+              const auth = await import('./firebase').then(m => m.auth);
+              const currentUser = auth.currentUser;
+              
+              if (!currentUser) {
+                console.error('❌ No user logged in');
+                return;
+              }
+              
+              console.log('🧪 Current user:', currentUser.uid);
+              
+              // Try to generate plan
+              try {
+                const { generateUserPlan } = await import('./services/aiPlanGenerator');
+                console.log('🧪 Calling generateUserPlan...');
+                
+                const response = await generateUserPlan(
+                  currentUser.uid, 
+                  testUserData, 
+                  { updateFitnessGoals: true } // Automatically update fitness goals
+                );
+                console.log('🧪 AI Response:', response);
+                
+                if (response.success && response.plan) {
+                  console.log('✅ Plan generated successfully!');
+                  console.log('📊 Plan data:', {
+                    goalType: response.plan.goalType,
+                    tdee: response.plan.tdee,
+                    targetCalories: response.plan.targetCalories,
+                    macros: response.plan.macros
+                  });
+                  
+                  // Show the extracted macro data in the format for updateFitnessGoalsBatch
+                  if (response.macroData) {
+                    console.log('🎯 Extracted macro data for fitness goals:', response.macroData);
+                  }
+                  
+                  // Set this plan in state for testing
+                  setGeneratedPlan(response.plan);
+                  setShowPlanModal(true);
+                } else {
+                  console.error('❌ Plan generation failed:', response);
+                }
+              } catch (error) {
+                console.error('❌ Error generating plan:', error);
+              }
+            }}
+            className="w-full bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-600 transition-colors"
+          >
+            🧪 Test AI Plan Generation
+          </button>
+          <button 
+            onClick={() => {
+              setGeneratedPlan(null);
+              setShowPlanModal(false);
+              console.log('🧪 Cleared test data - try generating plan again');
+            }}
+            className="w-full bg-red-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-red-600 transition-colors"
+          >
+            🗑️ Clear Test Data
           </button>
         </div>
       )}
@@ -977,6 +1250,26 @@ export default function App() {
       <FitnessScoreModal
         isOpen={isFitnessScoreOpen}
         onClose={() => setIsFitnessScoreOpen(false)}
+      />
+
+      {/* Plan Generated Modal (global - shows after first plan generation) */}
+      {/* Debug: showPlanModal={showPlanModal}, generatedPlan={!!generatedPlan} */}
+      <PlanGeneratedModal
+        isOpen={showPlanModal}
+        onClose={() => {
+          console.log('📋 Closing plan modal via X button');
+          setShowPlanModal(false);
+          setHasSeenPlanModal(true);
+          localStorage.setItem('hasSeenPlanModal', 'true');
+        }}
+        status={generatedPlan ? 'ready' : 'loading'}
+        plan={generatedPlan}
+        onContinueToDashboard={() => {
+          console.log('📋 Closing plan modal via button');
+          setShowPlanModal(false);
+          setHasSeenPlanModal(true);
+          localStorage.setItem('hasSeenPlanModal', 'true');
+        }}
       />
 
     </div>

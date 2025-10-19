@@ -1,17 +1,32 @@
 import { useState } from 'react';
-import { ArrowLeft, Info, Activity, TrendingDown, Minus, TrendingUp, Calculator, Target, Flame, Dumbbell } from 'lucide-react';
+import { ArrowLeft, Info, Activity, TrendingDown, Minus, TrendingUp, Calculator, Target, Flame, Dumbbell, Sparkles } from 'lucide-react';
 import { Footer } from './Footer';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
-import { toast } from 'sonner'; // 👈 Fixed: removed version specification
+import { toast } from 'sonner';
+import { PlanGeneratedModal } from './PlanGeneratedModal';
+import { generateUserPlan } from '../services/aiPlanGenerator';
+import type { UserPlan, PlanModalStatus } from '../types/planTypes';
+
+interface UserProfile {
+  age?: number;
+  weight?: number; // in kg
+  height?: number; // in cm
+  gender?: 'male' | 'female';
+  activityLevel?: string;
+  goalType?: 'cut' | 'maintain' | 'bulk';
+}
 
 interface FitnessGoalPageProps {
   onBack: () => void;
   onSaveGoal: (goalData: GoalData) => void;
   onNavigate: (page: 'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai') => void;
   onFeedbackClick: () => void;
+  onPlanGenerated?: (plan: any) => void; // Callback when AI plan is generated
+  userId?: string; // Current user ID for plan generation
+  userProfile?: UserProfile; // Existing user data
 }
 
 export interface GoalData {
@@ -29,7 +44,7 @@ export interface GoalData {
   fiber: number; // 👈 Added missing fiber property
 }
 
-export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClick }: FitnessGoalPageProps) {
+export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClick, onPlanGenerated, userId, userProfile }: FitnessGoalPageProps) {
   const [selectedGoal, setSelectedGoal] = useState<'cut' | 'maintain' | 'bulk' | null>(null);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [infoContent, setInfoContent] = useState<any>(null);
@@ -125,10 +140,10 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
 
   const activityLevels = [
     { value: '1.2', label: 'Sedentary (little or no exercise)' },
-    { value: '1.375', label: 'Lightly active (1-3 days/week)' },
-    { value: '1.55', label: 'Moderately active (3-5 days/week)' },
-    { value: '1.725', label: 'Very active (6-7 days/week)' },
-    { value: '1.9', label: 'Super active (physical job + training)' }
+    { value: '1.3', label: 'Lightly active (1-3 days/week)' },
+    { value: '1.4', label: 'Moderately active (3-5 days/week)' },
+    { value: '1.55', label: 'Very active (6-7 days/week)' },
+    { value: '1.7', label: 'Super active (physical job + training)' }
   ];
 
   const openInfoDialog = (goal: typeof goalOptions[0]) => {
@@ -216,6 +231,12 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
   const [calculatedTdee, setCalculatedTdee] = useState(0);
   const [calculatedTargetCalories, setCalculatedTargetCalories] = useState(0);
   const [calculatedMacros, setCalculatedMacros] = useState<{ protein: number; carbs: number; fat: number; fiber: number } | null>(null);
+  
+  // AI Plan Generation State
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [planModalStatus, setPlanModalStatus] = useState<PlanModalStatus>('loading');
+  const [generatedPlan, setGeneratedPlan] = useState<UserPlan | null>(null);
+  const [planError, setPlanError] = useState<string>('');
 
   const handleCalculate = () => {
     if (!selectedGoal || !age || !weight || !activityLevel) {
@@ -248,7 +269,7 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
     setShowResults(true);
   };
 
-  const handleSaveAsGoal = () => {
+  const handleSaveAsGoal = async () => {
     if (!calculatedMacros) return;
 
     const goalData: GoalData = {
@@ -263,9 +284,79 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
       ...calculatedMacros
     };
 
+    // Save the goal first
     onSaveGoal(goalData);
     toast.success('Fitness goal saved successfully!');
-    onBack();
+
+    // Generate AI plan if userId is provided
+    if (userId && onPlanGenerated) {
+      await handleGenerateAIPlan(goalData);
+    } else {
+      onBack();
+    }
+  };
+
+  const handleGenerateAIPlan = async (goalData: GoalData) => {
+    if (!userId) {
+      toast.error('User not found. Please try logging in again.');
+      return;
+    }
+
+    try {
+      // Show loading modal
+      setPlanModalStatus('loading');
+      setPlanModalOpen(true);
+
+      // Prepare user data for AI generation
+      const userData = {
+        age: goalData.age,
+        weight: goalData.weight,
+        height: goalData.height,
+        gender: goalData.gender,
+        activityLevel: goalData.activityLevel,
+        goalType: goalData.goalType
+      };
+
+      // Generate the plan
+      console.log('🤖 Generating AI plan for user:', userId);
+      const response = await generateUserPlan(userId, userData, { updateFitnessGoals: true });
+
+      if (response.success && response.plan) {
+        // Close loading modal
+        setPlanModalOpen(false);
+        
+        // Navigate back to dashboard first
+        onBack();
+        
+        // Then show the success modal after a small delay
+        setTimeout(() => {
+          onPlanGenerated?.(response.plan);
+        }, 100);
+        
+        console.log('✅ AI plan generated successfully:', response.plan.id);
+      } else {
+        // Show error modal
+        const errorMessages = {
+          RATE_LIMIT_EXCEEDED: 'You\'ve reached your daily plan generation limit. Please try again later.',
+          INVALID_USER_DATA: 'Invalid user data. Please check your inputs and try again.',
+          GEMINI_API_TIMEOUT: 'AI service is temporarily unavailable. Please try again later.',
+          FIRESTORE_ERROR: 'Database error occurred. Please try again.',
+          SCHEMA_VALIDATION_FAILED: 'Plan validation failed. Please try again.',
+          UNKNOWN_ERROR: 'An unexpected error occurred. Please try again.'
+        };
+        
+        const errorMessage = response.error ? errorMessages[response.error] : 'Unknown error occurred';
+        setPlanError(errorMessage);
+        setPlanModalStatus('error');
+        
+        console.error('❌ AI plan generation failed:', response.error);
+      }
+
+    } catch (error) {
+      console.error('❌ Plan generation error:', error);
+      setPlanError('An unexpected error occurred while generating your plan.');
+      setPlanModalStatus('error');
+    }
   };
 
   return (
@@ -679,8 +770,17 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
                 className="px-8 py-3 rounded-xl text-white transition-all hover:shadow-lg hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                 style={{ backgroundColor: '#1C7C54' }}
               >
-                <Target className="w-5 h-5" />
-                Set as New Goal
+                {userId && onPlanGenerated ? (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    Generate AI Plan
+                  </>
+                ) : (
+                  <>
+                    <Target className="w-5 h-5" />
+                    Set as New Goal
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -733,6 +833,19 @@ export function FitnessGoalPage({ onBack, onSaveGoal, onNavigate, onFeedbackClic
           </DialogHeader>
         </DialogContent>
       </Dialog>
+
+      {/* AI Plan Generation Modal */}
+      <PlanGeneratedModal
+        isOpen={planModalOpen}
+        onClose={() => setPlanModalOpen(false)}
+        status={planModalStatus}
+        plan={generatedPlan}
+        onContinueToDashboard={() => {
+          setPlanModalOpen(false);
+          onBack();
+        }}
+        error={planError}
+      />
 
       <Footer 
         onNavigate={onNavigate}

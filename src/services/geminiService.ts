@@ -18,7 +18,7 @@ interface GeminiResponse {
 
 class GeminiService {
   private apiKey: string;
-  private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
+  private baseUrl = 'https://generativelanguage.googleapis.com/v1/models';
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -29,23 +29,38 @@ class GeminiService {
    */
   async chat(messages: GeminiMessage[], model: string = 'gemini-2.5-flash'): Promise<string> {
     try {
-      const response = await fetch(`${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`, {
+      const requestUrl = `${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`;
+      const requestBody = {
+        contents: messages,
+        generationConfig: {
+          temperature: 0.3,
+          topK: 20,
+          topP: 0.8,
+          maxOutputTokens: 4096,
+        },
+      };
+
+      console.log('🤖 Gemini API Request:', {
+        url: requestUrl.replace(this.apiKey, '***API_KEY***'),
+        model,
+        messageCount: messages.length,
+        firstMessagePreview: messages[0]?.parts[0]?.text?.substring(0, 200) + '...'
+      });
+
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: messages,
-          generationConfig: {
-            temperature: 0.8,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          },
-          tools: [{ name: 'google_search' }], // allows macro lookups
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`Gemini API Error Details:`, {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText
+        });
+        throw new Error(`Gemini API error (${response.status}): ${response.statusText} - ${errorText}`);
       }
 
       const data: GeminiResponse = await response.json();
@@ -68,7 +83,12 @@ class GeminiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: messages,
-        tools: [{ name: 'google_search' }],
+        generationConfig: {
+          temperature: 0.8,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        },
       }),
     });
 
@@ -162,6 +182,128 @@ Provide specific, encouraging feedback and practical exercise advice.`;
 
     return this.chat(messages);
   }
+
+  /**
+   * 🎯 Plan Generator - Create 4-week personalized fitness plans
+   */
+  async generatePersonalizedPlan(userContext: {
+    age: number;
+    weight: number;
+    height: number;
+    gender: 'male' | 'female';
+    goalType: 'cut' | 'bulk' | 'maintain';
+    activityLevel: string;
+    targetCalories: number;
+    macros: {
+      protein: number;
+      carbs: number;
+      fat: number;
+      fiber: number;
+    };
+    tdee: number;
+  }): Promise<string> {
+    const goalDescriptions = {
+      cut: 'lose fat while preserving muscle',
+      bulk: 'build lean muscle mass with minimal fat gain',
+      maintain: 'maintain current weight and improve body composition'
+    };
+
+    const activityDescriptions: { [key: string]: string } = {
+      '1.2': 'sedentary lifestyle',
+      '1.375': 'lightly active (1-3 days/week)',
+      '1.55': 'moderately active (3-5 days/week)',
+      '1.725': 'very active (6-7 days/week)',
+      '1.9': 'extremely active (physical job + daily training)'
+    };
+
+    const systemPrompt = `Create a fitness plan as JSON. Respond with ONLY this JSON structure and no other text:
+
+{
+  "summary": {
+    "daily_calories": ${userContext.targetCalories},
+    "macros": {
+      "protein": ${userContext.macros.protein},
+      "carbs": ${userContext.macros.carbs},
+      "fat": ${userContext.macros.fat},
+      "fiber": ${userContext.macros.fiber}
+    },
+    "goal_description": "${goalDescriptions[userContext.goalType]}"
+  },
+  "weeks": [
+    {
+      "week": 1,
+      "focus": "Foundation Building",
+      "nutrition": ["Track calories daily", "Eat protein with meals", "Stay hydrated"],
+      "workouts": ["3x strength training", "2x cardio"],
+      "motivation": "Start small, build consistency!"
+    },
+    {
+      "week": 2,
+      "focus": "Building Momentum", 
+      "nutrition": ["Meal prep twice weekly", "Include vegetables", "Control portions"],
+      "workouts": ["4x strength training", "2x cardio"],
+      "motivation": "Consistency beats perfection."
+    },
+    {
+      "week": 3,
+      "focus": "Pushing Forward",
+      "nutrition": ["Focus on whole foods", "Time nutrients", "Plan ahead"],
+      "workouts": ["4x strength training", "3x cardio"],
+      "motivation": "You're building lasting habits."
+    },
+    {
+      "week": 4,
+      "focus": "Finishing Strong",
+      "nutrition": ["Trust the process", "Adjust as needed", "Celebrate progress"],
+      "workouts": ["5x strength training", "3x cardio"],
+      "motivation": "Strong finishes create strong beginnings."
+    }
+  ]
+}`;
+
+    const messages: GeminiMessage[] = [
+      { role: 'user', parts: [{ text: systemPrompt }] }
+    ];
+
+    const response = await this.chat(messages, 'gemini-2.5-flash');
+    
+    console.log('🤖 Raw Gemini response:', response);
+    console.log('🤖 Response length:', response.length);
+    console.log('🤖 First 200 chars:', response.substring(0, 200));
+    
+    // Clean response to ensure it's valid JSON
+    const cleanedResponse = this.cleanJsonResponse(response);
+    
+    return cleanedResponse;
+  }
+
+  /**
+   * Clean and validate JSON response from Gemini
+   */
+  private cleanJsonResponse(response: string): string {
+    // Remove any markdown formatting
+    let cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    
+    // Remove any leading/trailing whitespace
+    cleaned = cleaned.trim();
+    
+    // Try to find JSON object boundaries
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    
+    if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.substring(start, end + 1);
+    }
+    
+    // Validate JSON
+    try {
+      JSON.parse(cleaned);
+      return cleaned;
+    } catch (error) {
+      console.error('❌ Invalid JSON response from Gemini:', error);
+      throw new Error('Gemini returned invalid JSON format');
+    }
+  }
 }
 
 // 🔁 Singleton pattern to prevent multiple instances
@@ -170,9 +312,9 @@ let geminiService: GeminiService | null = null;
 export function getGeminiService(): GeminiService {
   if (!geminiService) {
     console.log('🔑 Checking Gemini API key...');
-    console.log('Environment variables available:', Object.keys(import.meta.env));
+    console.log('Environment variables available:', Object.keys((import.meta as any).env));
     
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
     
     if (!apiKey) {
       console.error('❌ VITE_GEMINI_API_KEY not found in environment variables');

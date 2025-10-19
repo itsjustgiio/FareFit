@@ -1,4 +1,5 @@
 import { Target, ChevronRight } from 'lucide-react';
+import type { PlanSummary } from '../types/planTypes';
 
 interface GoalSetupBlockProps {
   onClick: () => void;
@@ -6,14 +7,20 @@ interface GoalSetupBlockProps {
     goalType: 'cut' | 'maintain' | 'bulk';
     targetCalories: number;
   } | null;
+  planSummary?: PlanSummary | null;
 }
 
-export function GoalSetupBlock({ onClick, userGoal }: GoalSetupBlockProps) {
+export function GoalSetupBlock({ onClick, userGoal, planSummary }: GoalSetupBlockProps) {
   const getGoalLabel = (type: string) => {
-    if (type === 'cut') return 'Leaning Out';
+    if (type === 'cut') return 'Cutting';
     if (type === 'bulk') return 'Bulking';
     return 'Maintaining';
   };
+
+  // Determine if we have any goal data - prioritize planSummary over userGoal
+  const hasGoal = planSummary || userGoal;
+  const activeGoalType = planSummary?.goalType || userGoal?.goalType;
+  const activeCalories = planSummary?.targetCalories || userGoal?.targetCalories;
 
   return (
     <div 
@@ -33,22 +40,34 @@ export function GoalSetupBlock({ onClick, userGoal }: GoalSetupBlockProps) {
         />
       </div>
       
-      <h4 className="mb-2" style={{ color: '#102A43' }}>
-        {userGoal ? 'Update Fitness Goal' : 'Set Your Fitness Goal'}
-      </h4>
-      
-      {userGoal ? (
-        <div className="text-sm space-y-1">
-          <p style={{ color: '#1C7C54' }}>
-            <strong>{getGoalLabel(userGoal.goalType)}</strong>
-          </p>
-          <p style={{ color: '#102A43', opacity: 0.7 }}>
-            {userGoal.targetCalories.toLocaleString()} kcal/day
-          </p>
-        </div>
+      {hasGoal ? (
+        <>
+          <h4 className="mb-1" style={{ color: '#102A43' }}>
+            Current Goal
+          </h4>
+          <div className="mb-3">
+            <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium mb-2"
+                 style={{ backgroundColor: '#1C7C5415', color: '#1C7C54' }}>
+              {getGoalLabel(activeGoalType || 'maintain')}
+            </div>
+          </div>
+          <div className="text-sm space-y-1">
+            <p style={{ color: '#102A43', opacity: 0.7 }}>
+              Target: {activeCalories?.toLocaleString()} kcal/day
+            </p>
+          </div>
+        </>
       ) : (
-        <p className="text-sm" style={{ color: '#102A43', opacity: 0.7 }}>
-          Get personalized calorie and macro recommendations
+        <>
+          <h4 className="mb-2" style={{ color: '#102A43' }}>
+            Set Your Fitness Goal
+          </h4>
+        </>
+      )}
+      
+      {!hasGoal && (
+        <p className="text-sm mb-3" style={{ color: '#102A43', opacity: 0.7 }}>
+          Set your goal to start tracking calories and get personalized recommendations.
         </p>
       )}
     </div>

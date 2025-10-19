@@ -1,4 +1,5 @@
 import { useUserMeals } from "../hooks/useUserMeals";
+import type { PlanSummary } from '../types/planTypes';
 
 interface CaloriesCardProps {
   onFoodAIClick?: () => void;
@@ -11,6 +12,7 @@ interface CaloriesCardProps {
     fat: number;
     fiber: number;
   } | null;
+  planSummary?: PlanSummary | null;
   loggedMacros?: {
     calories: number;
     protein: number;
@@ -20,7 +22,7 @@ interface CaloriesCardProps {
   };
 }
 
-export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, loggedMacros }: CaloriesCardProps) {
+export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, planSummary, loggedMacros }: CaloriesCardProps) {
   // Use enhanced real-time data from Firestore
   const { meals, loading, totals } = useUserMeals();
 
@@ -44,15 +46,17 @@ export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, loggedMa
   
   // Use calculated totals from hook
   const displayCalories = totals.calories;
-  const targetCalories = userGoal?.targetCalories || 2200;
+  
+  // Prioritize planSummary data over userGoal data, then fallback to defaults
+  const targetCalories = planSummary?.targetCalories || userGoal?.targetCalories || 2200;
   const displayProtein = totals.protein;
-  const targetProtein = userGoal?.protein || 165;
+  const targetProtein = planSummary?.macros.protein || userGoal?.protein || 165;
   const displayCarbs = totals.carbs;
-  const targetCarbs = userGoal?.carbs || 220;
+  const targetCarbs = planSummary?.macros.carbs || userGoal?.carbs || 220;
   const displayFat = totals.fat;
-  const targetFat = userGoal?.fat || 73;
+  const targetFat = planSummary?.macros.fat || userGoal?.fat || 73;
   const displayFiber = totals.fiber;
-  const targetFiber = userGoal?.fiber || 30;
+  const targetFiber = planSummary?.macros.fiber || userGoal?.fiber || 30;
 
   return (
     <div 

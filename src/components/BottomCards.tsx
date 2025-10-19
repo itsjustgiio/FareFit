@@ -1,5 +1,6 @@
 import { Apple, Brain } from 'lucide-react';
 import { GoalSetupBlock } from './GoalSetupBlock';
+import type { PlanSummary } from '../types/planTypes';
 
 interface BottomCardsProps {
   onGoalSetupClick: () => void;
@@ -9,9 +10,10 @@ interface BottomCardsProps {
     goalType: 'cut' | 'maintain' | 'bulk';
     targetCalories: number;
   } | null;
+  planSummary?: PlanSummary | null;
 }
 
-export function BottomCards({ onGoalSetupClick, onCoachAIClick, onFoodAssistantClick, userGoal }: BottomCardsProps) {
+export function BottomCards({ onGoalSetupClick, onCoachAIClick, onFoodAssistantClick, userGoal, planSummary }: BottomCardsProps) {
   const cards = [
     {
       icon: Apple,
@@ -59,7 +61,7 @@ export function BottomCards({ onGoalSetupClick, onCoachAIClick, onFoodAssistantC
           </button>
         </div>
       ))}
-      <GoalSetupBlock onClick={onGoalSetupClick} userGoal={userGoal} />
+      <GoalSetupBlock onClick={onGoalSetupClick} userGoal={userGoal} planSummary={planSummary} />
     </div>
   );
 }

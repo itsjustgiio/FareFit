@@ -231,6 +231,25 @@ export const updateFitnessGoals = async (
     }
 }
 
+// New function for batch updates (more efficient than multiple single updates)
+export const updateFitnessGoalsBatch = async (
+    userId: string, 
+    updates: Record<string, any>, 
+    collection: string = "Fitness_Goals"
+) => {
+    try {
+        const userRef = doc(db, collection, userId);
+        await updateDoc(userRef, {
+            ...updates,
+            updated_at: Timestamp.now() // Add timestamp for tracking
+        });
+        console.log(`✅ Updated ${Object.keys(updates).join(', ')} in ${collection}/${userId} successfully.`);
+    } catch (error) {
+        console.error(`❌ Error updating fitness goals for user ${userId}:`, error);
+        throw error;
+    }
+}
+
 // Sanitize meal data to ensure all numeric fields are valid numbers
 function sanitizeMealData(meal: any) {
   const clean = { ...meal };
@@ -541,6 +560,65 @@ export const getOnboardingStatus = async (userId: string): Promise<boolean> => {
     console.error("❌ Error fetching onboarding status:", error);
     // Return false as safe default to ensure onboarding shows
     return false;
+  }
+};
+
+/**
+ * Gets the complete user profile data from Firestore
+ * Fetches from both Users and Fitness_Goals collections and merges the data
+ * Maps onboarding field names to expected field names
+ */
+export const getUserProfile = async (userId: string) => {
+  try {
+    // Fetch from both collections
+    const userDocRef = doc(db, "Users", userId);
+    const fitnessGoalsRef = doc(db, "Fitness_Goals", userId);
+    
+    const [userDoc, fitnessDoc] = await Promise.all([
+      getDoc(userDocRef),
+      getDoc(fitnessGoalsRef)
+    ]);
+    
+    const userData = userDoc.exists() ? userDoc.data() : {};
+    const fitnessData = fitnessDoc.exists() ? fitnessDoc.data() : {};
+    
+    console.log(`👤 Raw user data (Users collection) for ${userId}:`, userData);
+    console.log(`🏋️ Raw fitness data (Fitness_Goals collection) for ${userId}:`, fitnessData);
+    
+    // Calculate age from birthday if available
+    let calculatedAge = userData.age || fitnessData.age;
+    if (!calculatedAge && (userData.birthday || fitnessData.birthday)) {
+      const birthday = userData.birthday || fitnessData.birthday;
+      const birthDate = new Date(birthday);
+      const today = new Date();
+      calculatedAge = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        calculatedAge--;
+      }
+    }
+    
+    // Merge and map data from both collections, prioritizing fitness data for fitness-related fields
+    const mappedProfile = {
+      age: calculatedAge,
+      gender: fitnessData.sex || fitnessData.gender || userData.sex || userData.gender,
+      weight: fitnessData.weight || userData.weight,
+      height: fitnessData.height || userData.height,
+      activityLevel: fitnessData.activity_level || fitnessData.activityLevel || userData.activityLevel,
+      goalType: fitnessData.goal_type || fitnessData.goal || fitnessData.goalType || userData.goal || userData.goalType,
+      onboardingComplete: userData.onboardingComplete || false,
+      // Include other fields as needed
+      full_name: userData.full_name,
+      email: userData.email,
+      birthday: userData.birthday || fitnessData.birthday,
+      dateOfBirth: userData.dateOfBirth,
+    };
+    
+    console.log(`👤 Merged and mapped user profile for ${userId}:`, mappedProfile);
+    return mappedProfile;
+  } catch (error) {
+    console.error("❌ Error fetching user profile:", error);
+    return null;
   }
 };
 
@@ -981,5 +1059,110 @@ export const getFriendsLeaderboard = async (): Promise<LeaderboardEntry[]> => {
   } catch (error) {
     console.error("❌ Error fetching friends leaderboard:", error);
     return [];
+  }
+};
+
+// ============================================================================
+// AI PLAN INTEGRATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Get user's active AI-generated plan summary for dashboard display
+ */
+export const getUserActivePlanSummary = async (userId: string) => {
+  try {
+    // Import the function from planStorageService
+    const { getUserPlanSummary } = await import('./services/planStorageService');
+    return await getUserPlanSummary(userId);
+  } catch (error) {
+    console.error("❌ Error fetching user plan summary:", error);
+    return null;
+  }
+};
+
+/**
+ * Check if user has an active AI plan
+ */
+export const hasActiveUserPlan = async (userId: string): Promise<boolean> => {
+  try {
+    // Import the function from planStorageService
+    const { getActiveUserPlan } = await import('./services/planStorageService');
+    const plan = await getActiveUserPlan(userId);
+    return plan !== null;
+  } catch (error) {
+    console.error("❌ Error checking for active user plan:", error);
+    return false;
+  }
+};
+
+/**
+ * Update fitness goals with TDEE and plan data when AI plan is generated
+ */
+export const updateFitnessGoalsFromPlan = async (
+  userId: string,
+  planData: {
+    tdee: number;
+    targetCalories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+    goalType: string;
+    age: number;
+    weight: number;
+    height: number;
+    gender: string;
+    activityLevel: string;
+  }
+) => {
+  try {
+    const fitnessGoalRef = doc(db, "Fitness_Goals", userId);
+    
+    await updateDoc(fitnessGoalRef, {
+      // Physical data
+      age: planData.age,
+      weight: planData.weight,
+      height: planData.height,
+      gender: planData.gender,
+      activity_level: planData.activityLevel,
+      
+      // Goal type
+      goal_type: planData.goalType,
+      
+      // Calculated values
+      tdee: planData.tdee,
+      target_calories: planData.targetCalories,
+      protein_target: planData.protein,
+      carbs_target: planData.carbs,
+      fats_target: planData.fat,
+      fiber_target: planData.fiber,
+      
+      // Metadata
+      updated_at: Timestamp.now(),
+      is_active: true
+    });
+
+    console.log(`✅ Updated fitness goals for user ${userId} with AI plan data`);
+  } catch (error) {
+    console.error("❌ Error updating fitness goals from plan:", error);
+    throw error;
+  }
+};
+
+/**
+ * Initialize plan-related collections for new users
+ */
+export const initializePlanCollectionsForUser = async (userId: string) => {
+  try {
+    // This function is called during user creation to ensure 
+    // plan-related collections are ready for use
+    
+    // The User_Plans collection is created on-demand when first plan is generated
+    // No need to pre-create documents
+    
+    console.log(`✅ Plan collections initialized for user ${userId}`);
+  } catch (error) {
+    console.error("❌ Error initializing plan collections:", error);
+    throw error;
   }
 };
