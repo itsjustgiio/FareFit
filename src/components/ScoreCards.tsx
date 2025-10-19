@@ -27,29 +27,30 @@ export function ScoreCards({
   const [loading, setLoading] = useState(true);
   const [animatedDailyScore, setAnimatedDailyScore] = useState(0);
 
-  useEffect(() => {
-    const loadDailyScore = async () => {
-      if (isDemoMode) {
-        setLoading(false);
-        return;
-      }
+  // In ScoreCards.tsx, update the useEffect:
+useEffect(() => {
+  const loadDailyScore = async () => {
+    if (isDemoMode || !userId) { // Add !userId check
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const scoreData = await calculateDailyScore(userId);
+      setDailyBreakdown(scoreData.breakdown);
       
-      try {
-        const scoreData = await calculateDailyScore(userId);
-        setDailyBreakdown(scoreData.breakdown);
-        
-        // Animate the daily score progress
-        animateValue(0, scoreData.totalScore, 1000, setAnimatedDailyScore);
-      } catch (error) {
-        console.error('Error loading daily score:', error);
-        setAnimatedDailyScore(dailyScore);
-      } finally {
-        setLoading(false);
-      }
-    };
+      // Animate the daily score progress
+      animateValue(0, scoreData.totalScore, 1000, setAnimatedDailyScore);
+    } catch (error) {
+      console.error('Error loading daily score:', error);
+      setAnimatedDailyScore(dailyScore);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    loadDailyScore();
-  }, [userId, isDemoMode, dailyScore]);
+  loadDailyScore();
+}, [userId, isDemoMode, dailyScore]);
 
   // Animation function for smooth number transition
   const animateValue = (start: number, end: number, duration: number, setValue: (value: number) => void) => {
