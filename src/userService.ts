@@ -81,6 +81,7 @@ export async function createUserRecords(userId: string, name: string, email: str
       full_name: name,
       email: email,
       avatar_url: "",
+      onboardingComplete: false, // 👈 New users need to complete onboarding
       created_at: Timestamp.now(),
       updated_at: Timestamp.now(),
     });
@@ -352,4 +353,78 @@ export const updateUserFareScoreOnLog = async (userId: string, eventName: string
 
   await updateDoc(docRef, { score: newScore });
   console.log(`✅ FareScore updated for ${eventName}: ${newScore}`);
+};
+
+// ===== ONBOARDING STATUS FUNCTIONS =====
+
+/**
+ * Gets the onboarding completion status from Firestore
+ * Returns false for new users or if no document exists
+ */
+export const getOnboardingStatus = async (userId: string): Promise<boolean> => {
+  try {
+    const userDocRef = doc(db, "Users", userId);
+    const userDoc = await getDoc(userDocRef);
+    
+    if (!userDoc.exists()) {
+      console.log(`📝 No user document found for ${userId} - treating as new user`);
+      return false;
+    }
+    
+    const userData = userDoc.data();
+    const onboardingComplete = userData.onboardingComplete || false;
+    
+    console.log(`📋 Onboarding status for ${userId}: ${onboardingComplete}`);
+    return onboardingComplete;
+  } catch (error) {
+    console.error("❌ Error fetching onboarding status:", error);
+    // Return false as safe default to ensure onboarding shows
+    return false;
+  }
+};
+
+/**
+ * Marks onboarding as complete in Firestore
+ * Also updates the updated_at timestamp
+ */
+export const setOnboardingComplete = async (userId: string): Promise<void> => {
+  try {
+    const userDocRef = doc(db, "Users", userId);
+    await updateDoc(userDocRef, {
+      onboardingComplete: true,
+      updated_at: Timestamp.now()
+    });
+    
+    console.log(`✅ Onboarding marked as complete for user ${userId}`);
+  } catch (error) {
+    console.error("❌ Error marking onboarding complete:", error);
+    throw error;
+  }
+};
+
+/**
+ * Helper function to migrate existing localStorage users to Firestore onboarding status
+ * Checks if user exists in Firestore but lacks onboarding status, sets to true for existing users
+ */
+export const migrateOnboardingStatus = async (userId: string): Promise<void> => {
+  try {
+    const userDocRef = doc(db, "Users", userId);
+    const userDoc = await getDoc(userDocRef);
+    
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      
+      // If user exists but doesn't have onboardingComplete field, they're an existing user
+      if (userData.onboardingComplete === undefined) {
+        console.log(`🔄 Migrating existing user ${userId} - setting onboarding as complete`);
+        await updateDoc(userDocRef, {
+          onboardingComplete: true,
+          updated_at: Timestamp.now()
+        });
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error migrating onboarding status:", error);
+    // Don't throw - this is a best-effort migration
+  }
 };

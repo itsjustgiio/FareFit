@@ -29,7 +29,7 @@ import { AccountPage } from './components/AccountPage';
 import { ScoreCards } from './components/ScoreCards';
 import DevToolsPage from './components/DevToolsPage';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
-import { logInUser, logInWithGoogle, signupUser, createUserRecords} from './userService';
+import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardingStatus, setOnboardingComplete, migrateOnboardingStatus } from './userService';
 import { log } from 'node:util';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase'; // your Firebase setup
@@ -76,13 +76,38 @@ export default function App() {
 
   // Check for existing session on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem('farefit_user');
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      setUser(userData);
-      setIsAuthenticated(true);
-      setAuthView(userData.onboardingComplete ? 'app' : 'onboarding');
-    }
+    const checkUserSession = async () => {
+      const savedUser = localStorage.getItem('farefit_user');
+      if (savedUser) {
+        const userData = JSON.parse(savedUser);
+        
+        // 🆕 If user is authenticated, verify onboarding status from Firestore
+        try {
+          const auth = await import('./firebase').then(m => m.auth);
+          const currentUser = auth.currentUser;
+          
+          if (currentUser) {
+            const realOnboardingStatus = await getOnboardingStatus(currentUser.uid);
+            
+            // Update user data if Firestore differs from localStorage
+            if (userData.onboardingComplete !== realOnboardingStatus) {
+              console.log(`🔄 Syncing onboarding status: localStorage=${userData.onboardingComplete}, Firestore=${realOnboardingStatus}`);
+              userData.onboardingComplete = realOnboardingStatus;
+              localStorage.setItem('farefit_user', JSON.stringify(userData));
+            }
+          }
+        } catch (error) {
+          console.warn("⚠️ Could not verify onboarding status from Firestore:", error);
+          // Fallback to localStorage data
+        }
+        
+        setUser(userData);
+        setIsAuthenticated(true);
+        setAuthView(userData.onboardingComplete ? 'app' : 'onboarding');
+      }
+    };
+    
+    checkUserSession();
   }, []);
 
   // Authentication handlers
@@ -96,11 +121,17 @@ export default function App() {
         return;
       }
 
+      // 🆕 Check real onboarding status from Firestore
+      const onboardingComplete = await getOnboardingStatus(firebaseUser.uid);
+      
+      // 🆕 Migrate existing users who might not have onboarding status set
+      await migrateOnboardingStatus(firebaseUser.uid);
+
       // Build your app's User object
       const loggedInUser: User = {
         email: firebaseUser.email || email,
         name: firebaseUser.displayName || email.split("@")[0],
-        onboardingComplete: false, // you can fetch this from Firestore if you save it
+        onboardingComplete: onboardingComplete, // 👈 Now uses real Firestore data
       };
 
       // Update state
@@ -108,7 +139,6 @@ export default function App() {
       setIsAuthenticated(true);
 
       // Decide whether to go to onboarding or app
-      // If you track onboarding in Firestore, you can fetch it here
       setAuthView(loggedInUser.onboardingComplete ? "app" : "onboarding");
 
     } catch (error: any) {
@@ -123,14 +153,14 @@ export default function App() {
       // 1. Create Firebase Auth user
       const firebaseUser = await signupUser(email, password, name);
 
-      // 2. Create Firestore records
+      // 2. Create Firestore records (includes onboardingComplete: false)
       await createUserRecords(firebaseUser.uid, name, email);
 
       // 3. Build app's local User object
       const newUser: User = {
         email: firebaseUser.email || email,
         name: firebaseUser.displayName || name,
-        onboardingComplete: false,
+        onboardingComplete: false, // 👈 New users always need onboarding
       };
 
       // 4. Save locally
@@ -140,7 +170,7 @@ export default function App() {
       // 5. Update app state
       setUser(newUser);
       setIsAuthenticated(true);
-      setAuthView('onboarding');
+      setAuthView('onboarding'); // 👈 New users always go to onboarding
 
     } catch (error: any) {
       console.error("Signup error:", error);
@@ -158,11 +188,17 @@ export default function App() {
         return;
       }
 
+      // 🆕 Check real onboarding status from Firestore
+      const onboardingComplete = await getOnboardingStatus(firebaseUser.uid);
+      
+      // 🆕 Migrate existing users who might not have onboarding status set
+      await migrateOnboardingStatus(firebaseUser.uid);
+
       // 2. Build your app's User object
       const loggedInUser: User = {
         email: firebaseUser.email!,
         name: firebaseUser.displayName || firebaseUser.email!.split("@")[0],
-        onboardingComplete: false, // you can fetch this from Firestore if you track onboarding
+        onboardingComplete: onboardingComplete, // 👈 Now uses real Firestore data
       };
 
       // 3. Update app state
@@ -176,22 +212,48 @@ export default function App() {
     }
   };
 
-  const handleOnboardingComplete = (onboardingData: any) => {
+  const handleOnboardingComplete = async (onboardingData: any) => {
     if (!user) return;
 
-    const updatedUser: User = {
-      ...user,
-      onboardingComplete: true,
-      onboardingData,
-    };
+    try {
+      // 🆕 Mark onboarding as complete in Firestore
+      // We need the Firebase user ID - get current authenticated user
+      const auth = await import('./firebase').then(m => m.auth);
+      const currentUser = auth.currentUser;
+      
+      if (currentUser) {
+        await setOnboardingComplete(currentUser.uid);
+        console.log("✅ Onboarding marked complete in Firestore");
+      }
 
-    // Save updated user data
-    localStorage.setItem(`farefit_user_${user.email}`, JSON.stringify(updatedUser));
-    localStorage.setItem('farefit_user', JSON.stringify(updatedUser));
-    
-    setUser(updatedUser);
-    setAuthView('app');
-    setShowWelcomeBanner(true);
+      const updatedUser: User = {
+        ...user,
+        onboardingComplete: true,
+        onboardingData,
+      };
+
+      // Save updated user data locally too
+      localStorage.setItem(`farefit_user_${user.email}`, JSON.stringify(updatedUser));
+      localStorage.setItem('farefit_user', JSON.stringify(updatedUser));
+      
+      setUser(updatedUser);
+      setAuthView('app');
+      setShowWelcomeBanner(true);
+
+    } catch (error) {
+      console.error("❌ Error completing onboarding:", error);
+      // Still proceed with local update as fallback
+      const updatedUser: User = {
+        ...user,
+        onboardingComplete: true,
+        onboardingData,
+      };
+      localStorage.setItem(`farefit_user_${user.email}`, JSON.stringify(updatedUser));
+      localStorage.setItem('farefit_user', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+      setAuthView('app');
+      setShowWelcomeBanner(true);
+    }
   };
 
   const handleLogout = async () => {
