@@ -94,43 +94,100 @@ class GeminiService {
    * ⚡ Streaming real-time response (for live typing effect)
    */
   async *streamChat(messages: GeminiMessage[], model: string = 'gemini-2.5-flash') {
-    const res = await fetch(`${this.baseUrl}/${model}:streamGenerateContent?key=${this.apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: messages,
-        generationConfig: {
-          temperature: 0.8,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-        },
-      }),
-    });
+    try {
+      // Use v1beta for experimental models, v1 for stable models
+      const apiVersion = model.includes('-exp') ? 'v1beta' : 'v1';
+      const requestUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:streamGenerateContent?key=${this.apiKey}`;
 
-    if (!res.body) return;
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
+      console.log('🌊 Gemini Streaming Request:', {
+        url: requestUrl.replace(this.apiKey, '***API_KEY***'),
+        model,
+        apiVersion,
+        messageCount: messages.length
+      });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const res = await fetch(requestUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: messages,
+          generationConfig: {
+            temperature: 0.8,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 2048,
+          },
+        }),
+      });
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Streaming API error:', {
+          status: res.status,
+          statusText: res.statusText,
+          errorBody: errorText
+        });
+        throw new Error(`Streaming API error (${res.status}): ${errorText}`);
+      }
 
-      for (const line of lines) {
-        if (!line.trim() || !line.startsWith('data: ')) continue;
-        try {
-          const json = JSON.parse(line.slice(6));
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) yield text;
-        } catch (e) {
-          console.warn('Stream parse error:', e);
+      if (!res.body) {
+        console.error('❌ No response body from streaming API');
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      console.log('✅ Starting to read stream...');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('✅ Stream complete');
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        console.log('📦 Raw buffer chunk:', buffer.substring(0, 200));
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          console.log('📄 Processing line:', line.substring(0, 100));
+
+          // Try parsing without 'data: ' prefix first (Gemini might not use SSE format)
+          if (!line.trim()) continue;
+
+          try {
+            // Try parsing as direct JSON first
+            const json = JSON.parse(line);
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              console.log('📝 Stream chunk (direct JSON):', text.substring(0, 50));
+              yield text;
+            }
+          } catch (e1) {
+            // If that fails, try with 'data: ' prefix
+            if (line.startsWith('data: ')) {
+              try {
+                const json = JSON.parse(line.slice(6));
+                const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                  console.log('📝 Stream chunk (SSE format):', text.substring(0, 50));
+                  yield text;
+                }
+              } catch (e2) {
+                console.warn('⚠️ Stream parse error:', { line: line.substring(0, 100), error: e2 });
+              }
+            }
+          }
         }
       }
+    } catch (error) {
+      console.error('❌ Error in streamChat:', error);
+      throw error;
     }
   }
 

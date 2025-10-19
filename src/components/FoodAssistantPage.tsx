@@ -3,6 +3,7 @@ import { ArrowLeft, Send, Apple, TrendingUp, ChefHat } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { analyzeUserFoodContext } from '../services/foodAssistantService';
 import { useUserMeals } from '../hooks/useUserMeals';
+import { getGeminiService } from '../services/geminiService';
 
 interface Message {
   id: string;
@@ -161,7 +162,7 @@ You are a friendly nutrition analysis assistant.
 The user says:
 ${userMessage.text}
 
-User’s current macro data:
+User's current macro data:
 Calories left: ${remainingMacros.calories}
 Protein left: ${remainingMacros.protein}g
 Carbs left: ${remainingMacros.carbs}g
@@ -175,34 +176,28 @@ Your job:
 3. Suggest 2–3 specific foods or meal ideas to balance the day.
 4. Keep your tone casual, motivational, and concise (1–2 short paragraphs).
 5. Use markdown for formatting (bold, bullet points, headers).
-6. If any food requires macros lookup, use Google Search grounding to check typical values before answering.
 `;
 
-      // Streaming Gemini call
+      // Use regular chat API instead of streaming (more reliable)
       const gemini = getGeminiService();
-      const stream = await gemini.streamChat(
+      const response = await gemini.chat(
         [{ role: 'user', parts: [{ text: systemPrompt }] }],
         'gemini-2.5-flash'
       );
 
-      let accumulated = '';
-      for await (const chunk of stream) {
-        accumulated += chunk;
-        setMessages((prev) =>
-          prev.map((m) => (m.id === newAssistant.id ? { ...m, text: accumulated } : m))
-        );
-      }
+      // Update the assistant message with the response
+      setMessages((prev) =>
+        prev.map((m) => (m.id === newAssistant.id ? { ...m, text: response } : m))
+      );
     } catch (err) {
       console.error('Gemini error:', err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 2).toString(),
-          text: '⚠️ Sorry, something went wrong while contacting the AI.',
-          sender: 'assistant',
-          timestamp: new Date(),
-        },
-      ]);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === newAssistant.id
+            ? { ...m, text: '⚠️ Sorry, something went wrong while contacting the AI.' }
+            : m
+        )
+      );
     } finally {
       setIsTyping(false);
     }
