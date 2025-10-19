@@ -28,10 +28,10 @@ export function Footer({ onNavigate, onFeedbackClick }: FooterProps) {
   ];
 
   const handleClick = (link: FooterLink, e: React.MouseEvent) => {
-    if ('page' in link && onNavigate) {
+    if (isNavigationPage(link) && onNavigate) {
       e.preventDefault();
       onNavigate(link.page);
-    } else if ('action' in link && link.action === 'feedback' && onFeedbackClick) {
+    } else if (isFeedbackAction(link) && onFeedbackClick) {
       e.preventDefault();
       onFeedbackClick();
     }
