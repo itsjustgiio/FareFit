@@ -51,19 +51,20 @@ export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, planSumm
   // Check if there's any logged data
   const hasData = meals.length > 0;
   
-  // Use calculated totals from hook
-  const displayCalories = totals.calories;
+  // Use calculated totals from hook with rounding for clean display
+  const displayCalories = Math.round(totals.calories);
   
   // Prioritize planSummary data over userGoal data, then fallback to defaults
-  const targetCalories = planSummary?.targetCalories || userGoal?.targetCalories || 2200;
-  const displayProtein = totals.protein;
-  const targetProtein = planSummary?.macros.protein || userGoal?.protein || 165;
-  const displayCarbs = totals.carbs;
-  const targetCarbs = planSummary?.macros.carbs || userGoal?.carbs || 220;
-  const displayFat = totals.fat;
-  const targetFat = planSummary?.macros.fat || userGoal?.fat || 73;
-  const displayFiber = totals.fiber;
-  const targetFiber = planSummary?.macros.fiber || userGoal?.fiber || 30;
+  // Round target values to whole numbers for clean UI display
+  const targetCalories = Math.round(planSummary?.targetCalories || userGoal?.targetCalories || 2200);
+  const displayProtein = Math.round(totals.protein);
+  const targetProtein = Math.round(planSummary?.macros?.protein || userGoal?.protein || 165);
+  const displayCarbs = Math.round(totals.carbs);
+  const targetCarbs = Math.round(planSummary?.macros?.carbs || userGoal?.carbs || 220);
+  const displayFat = Math.round(totals.fat);
+  const targetFat = Math.round(planSummary?.macros?.fat || userGoal?.fat || 73);
+  const displayFiber = Math.round(totals.fiber);
+  const targetFiber = Math.round(planSummary?.macros?.fiber || userGoal?.fiber || 30);
 
   // Log the source of target values for debugging
   console.log('📊 CaloriesCard target values source:', {

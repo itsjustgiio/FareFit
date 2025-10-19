@@ -3,9 +3,20 @@
  * Handles all AI interactions with Google Gemini
  */
 
+interface GeminiTextPart {
+  text: string;
+}
+
+interface GeminiImagePart {
+  inline_data: {
+    mime_type: string;
+    data: string;
+  };
+}
+
 interface GeminiMessage {
   role: 'user' | 'model';
-  parts: [{ text: string }];
+  parts: (GeminiTextPart | GeminiImagePart)[];
 }
 
 interface GeminiResponse {
@@ -44,7 +55,9 @@ class GeminiService {
         url: requestUrl.replace(this.apiKey, '***API_KEY***'),
         model,
         messageCount: messages.length,
-        firstMessagePreview: messages[0]?.parts[0]?.text?.substring(0, 200) + '...'
+        firstMessagePreview: 'text' in (messages[0]?.parts[0] || {}) ? 
+          (messages[0].parts[0] as GeminiTextPart).text.substring(0, 200) + '...' : 
+          '[Image + Text]'
       });
 
       const response = await fetch(requestUrl, {

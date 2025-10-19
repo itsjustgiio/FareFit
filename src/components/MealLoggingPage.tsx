@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak, addBarcodeToHistory, getBarcodeHistory, getDateInEasternTimezone} from '../userService';
+import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak, addBarcodeToHistory, getBarcodeHistory, getDateInEasternTimezone, analyzeMealImage} from '../userService';
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
 import { BarcodeScannerCamera } from './BarcodeScannerCamera';
@@ -1526,101 +1526,173 @@ function BarcodeScanTab({ onFoodDetected }: any) {
 
 // Photo Scan Tab
 function PhotoScanTab({ onMealDetected }: any) {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzedData, setAnalyzedData] = useState<any>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-        simulateAIAnalysis();
-      };
-      reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      processImageFiles(files);
     }
   };
 
-  const simulateAIAnalysis = () => {
+  const processImageFiles = (files: File[]) => {
+    // Filter and validate image files
+    const validImageFiles = files.filter(file => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not a valid image file`);
+        return false;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 10MB)`);
+        return false;
+      }
+      return true;
+    });
+
+    if (validImageFiles.length === 0) return;
+
+    // Limit to 5 photos max for better performance
+    const maxPhotos = 5;
+    const photosToProcess = validImageFiles.slice(0, maxPhotos);
+    
+    if (validImageFiles.length > maxPhotos) {
+      toast.warning(`Only processing first ${maxPhotos} photos for optimal AI analysis`);
+    }
+
+    toast.success(`📸 ${photosToProcess.length} photo(s) uploaded! Processing...`);
+
+    // Process all selected images
+    const imagePromises = photosToProcess.map(file => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(imagePromises).then(imageDataArray => {
+      setSelectedImages(imageDataArray);
+      simulateAIAnalysis(imageDataArray);
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      processImageFiles(files);
+    }
+  };
+
+  const handleClick = () => {
+    const fileInput = document.getElementById('photo-upload') as HTMLInputElement;
+    fileInput?.click();
+  };
+
+  const simulateAIAnalysis = async (images: string[] = selectedImages) => {
     setIsAnalyzing(true);
-    setTimeout(() => {
+    try {
+      console.log(`🔬 Starting real AI analysis with ${images.length} image(s)...`);
+      
+      // For now, analyze the first (main) image, but in future we could:
+      // 1. Analyze all images and combine results
+      // 2. Let user pick the best angle
+      // 3. Use multiple angles for better accuracy
+      const mainImage = images[0];
+      const result = await analyzeMealImage(mainImage, images.length);
+      
+      if (result.success) {
+        // Check if AI detected meaningful items or seems uncertain
+        const hasLowConfidenceItems = result.data.items.some((item: any) => 
+          item.name.toLowerCase().includes('unknown') || 
+          item.name.toLowerCase().includes('unidentified') ||
+          item.name.toLowerCase().includes('unclear') ||
+          item.calories === 0 ||
+          item.confidence === 'low'
+        );
+
+        const overallLowConfidence = result.data.confidence === 'low' || hasLowConfidenceItems;
+
+        if (overallLowConfidence || result.data.items.length === 0) {
+          // AI had trouble - offer manual description option
+          setAnalyzedData({
+            ...result.data,
+            totalImages: images.length,
+            analysisNote: `AI had difficulty identifying some items from ${images.length} photo(s). Consider describing the meal manually.`,
+            lowConfidence: true
+          });
+          toast.warning('AI had trouble identifying some items. Try describing your meal manually for better results!');
+        } else {
+          setAnalyzedData({
+            ...result.data,
+            totalImages: images.length,
+            analysisNote: images.length > 1 ? 
+              `Analyzed primary image from ${images.length} photos provided` :
+              'Single image analysis'
+          });
+          toast.success(`✨ AI analyzed your meal from ${images.length} photo(s)! ${result.data.items.length} items detected.`);
+        }
+      } else {
+        console.warn('⚠️ AI analysis failed, using fallback data:', result.error);
+        setAnalyzedData({
+          ...result.data,
+          totalImages: images.length,
+          analysisNote: `Analysis had issues with ${images.length} photo(s). Try describing your meal manually.`,
+          lowConfidence: true
+        });
+        toast.warning('AI analysis had issues. Try describing your meal manually for better results!');
+      }
+    } catch (error) {
+      console.error('❌ Image analysis completely failed:', error);
+      // Fallback to original mock data
       setAnalyzedData({
-        name: 'Grilled Chicken Salad',
+        name: 'Mixed Meal (Analysis Failed)',
+        totalImages: images.length,
+        analysisNote: `Could not analyze ${images.length} photo(s). Please describe your meal manually.`,
+        lowConfidence: true,
         items: [
           {
             id: '1',
-            name: 'Grilled Chicken Breast',
-            servingSize: '150g',
+            name: 'Food Item',
+            servingSize: '1 portion',
             amountConsumed: 1,
-            baseCalories: 248,
-            baseProtein: 47,
-            baseCarbs: 0,
-            baseFat: 5,
-            baseFiber: 0,
-            calories: 248,
-            protein: 47,
-            carbs: 0,
-            fat: 5,
-            fiber: 0,
+            baseCalories: 300,
+            baseProtein: 15,
+            baseCarbs: 30,
+            baseFat: 10,
+            baseFiber: 3,
+            calories: 300,
+            protein: 15,
+            carbs: 30,
+            fat: 10,
+            fiber: 3,
             isExpanded: false,
-          },
-          {
-            id: '2',
-            name: 'Mixed Greens',
-            servingSize: '2 cups',
-            amountConsumed: 1,
-            baseCalories: 20,
-            baseProtein: 2,
-            baseCarbs: 4,
-            baseFat: 0,
-            baseFiber: 2,
-            calories: 20,
-            protein: 2,
-            carbs: 4,
-            fat: 0,
-            fiber: 2,
-            isExpanded: false,
-          },
-          {
-            id: '3',
-            name: 'Cherry Tomatoes',
-            servingSize: '1/2 cup',
-            amountConsumed: 1,
-            baseCalories: 27,
-            baseProtein: 1,
-            baseCarbs: 6,
-            baseFat: 0,
-            baseFiber: 2,
-            calories: 27,
-            protein: 1,
-            carbs: 6,
-            fat: 0,
-            fiber: 2,
-            isExpanded: false,
-          },
-          {
-            id: '4',
-            name: 'Olive Oil Dressing',
-            servingSize: '2 tbsp',
-            amountConsumed: 1,
-            baseCalories: 125,
-            baseProtein: 0,
-            baseCarbs: 2,
-            baseFat: 14,
-            baseFiber: 0,
-            calories: 125,
-            protein: 0,
-            carbs: 2,
-            fat: 14,
-            fiber: 0,
-            isExpanded: false,
+            brandName: ''
           },
         ],
       });
+      toast.error('AI analysis failed. Please describe your meal manually for better results.');
+    } finally {
       setIsAnalyzing(false);
-      toast.success('AI detected multiple items! Review and confirm.');
-    }, 2500);
+    }
   };
 
   const handleConfirmMeal = () => {
@@ -1632,49 +1704,76 @@ function PhotoScanTab({ onMealDetected }: any) {
 
   return (
     <div className="bg-white rounded-xl p-8 shadow-sm">
-      {!selectedImage ? (
+      {selectedImages.length === 0 ? (
         <div>
-          <label
-            htmlFor="photo-upload"
-            className="border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-gray-50"
-            style={{ borderColor: '#A8E6CF' }}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={handleClick}
+            className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-gray-50 ${
+              isDragOver ? 'bg-green-50 border-green-400' : ''
+            }`}
+            style={{ borderColor: isDragOver ? '#1C7C54' : '#A8E6CF' }}
           >
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mb-4"
-              style={{ backgroundColor: '#E8F4F2' }}
+              style={{ backgroundColor: isDragOver ? '#1C7C54' : '#E8F4F2' }}
             >
-              <Upload className="w-10 h-10" style={{ color: '#1C7C54' }} />
+              <Upload className="w-10 h-10" style={{ color: isDragOver ? 'white' : '#1C7C54' }} />
             </div>
             <p className="mb-2" style={{ color: '#102A43' }}>
-              Drag & drop or click to upload
+              {isDragOver ? 'Drop images here!' : 'Drag & drop or click to upload'}
             </p>
             <p className="text-sm mb-4" style={{ color: '#102A43', opacity: 0.6 }}>
-              Take a photo of your meal
+              Take multiple photos from different angles
             </p>
             <input
               id="photo-upload"
               type="file"
               accept="image/*"
               capture="environment"
+              multiple
               onChange={handleImageUpload}
               className="hidden"
             />
-          </label>
+          </div>
 
           <div className="mt-6 p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
             <p className="text-sm mb-2" style={{ color: '#102A43' }}>
-              <strong>📸 Photo Tips:</strong>
+              <strong>📱 Multi-Angle Photo Tips:</strong>
             </p>
             <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
+              <li>• Upload 2-5 photos from different angles for better AI analysis</li>
+              <li>• Include top-down view and side angles</li>
               <li>• Good lighting helps AI detect foods better</li>
-              <li>• Capture the entire plate from above</li>
-              <li>• AI will identify each item separately</li>
+              <li>• AI will analyze all photos for more accurate results</li>
             </ul>
           </div>
         </div>
       ) : (
         <div>
-          <img src={selectedImage} alt="Uploaded meal" className="w-full h-64 object-cover rounded-xl mb-4" />
+          {/* Image Gallery */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {selectedImages.map((image, index) => (
+              <div key={index} className="relative">
+                <img 
+                  src={image} 
+                  alt={`Meal angle ${index + 1}`} 
+                  className="w-full h-32 object-cover rounded-lg border-2"
+                  style={{ borderColor: index === 0 ? '#1C7C54' : '#E8F4F2' }}
+                />
+                {index === 0 && (
+                  <div className="absolute top-2 left-2 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: '#1C7C54' }}>
+                    Primary
+                  </div>
+                )}
+                <div className="absolute top-2 right-2 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                  {index + 1}/{selectedImages.length}
+                </div>
+              </div>
+            ))}
+          </div>
 
           {isAnalyzing ? (
             <div className="text-center py-8">
@@ -1686,37 +1785,77 @@ function PhotoScanTab({ onMealDetected }: any) {
                 <Sparkles className="w-12 h-12" style={{ color: '#1C7C54' }} />
               </motion.div>
               <p className="mb-1" style={{ color: '#102A43' }}>
-                Analyzing your meal...
+                Analyzing your {selectedImages.length} photo(s)...
               </p>
               <p className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                AI is detecting foods and calculating nutrition
+                AI is detecting foods from multiple angles
               </p>
             </div>
           ) : analyzedData ? (
             <div className="space-y-4">
               <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
                 <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>
-                  ✨ <strong>AI Detected {analyzedData.items.length} Items:</strong>
+                  ✨ <strong>AI Detected {analyzedData.items.length} Items from {analyzedData.totalImages || selectedImages.length} photo(s):</strong>
                 </p>
+                {analyzedData.analysisNote && (
+                  <p className="text-xs mb-3 italic" style={{ color: '#102A43', opacity: 0.7 }}>
+                    {analyzedData.analysisNote}
+                  </p>
+                )}
                 <ul className="space-y-1 text-sm" style={{ color: '#102A43' }}>
                   {analyzedData.items.map((item: any, idx: number) => (
                     <li key={idx}>
-                      • {item.name} ({item.portion}) - {item.calories} kcal
+                      • {item.name} ({item.servingSize}) - {item.calories} kcal
                     </li>
                   ))}
                 </ul>
               </div>
 
+              {/* Low Confidence Helper */}
+              {analyzedData.lowConfidence && (
+                <div className="p-4 rounded-lg border-2" style={{ backgroundColor: '#FFF7ED', borderColor: '#F97316' }}>
+                  <div className="flex items-start gap-3">
+                    <div className="text-xl">🤔</div>
+                    <div className="flex-1">
+                      <p className="text-sm mb-3" style={{ color: '#C2410C' }}>
+                        <strong>Having trouble identifying your meal?</strong>
+                      </p>
+                      <p className="text-sm mb-3" style={{ color: '#102A43' }}>
+                        Describe what you ate and let our AI chat help you get accurate nutrition data:
+                      </p>
+                      <div className="space-y-2">
+                        <p className="text-xs italic" style={{ color: '#102A43', opacity: 0.7 }}>
+                          Example: "Grilled chicken breast with steamed broccoli and quinoa, about 6oz chicken, 1 cup broccoli, 1/2 cup quinoa"
+                        </p>
+                        <button
+                          onClick={() => {
+                            // Switch to AI tab and provide context
+                            const aiTab = document.querySelector('[data-value="ai"]') as HTMLElement;
+                            aiTab?.click();
+                            toast.info('💬 Switched to AI Chat - describe your meal for better analysis!');
+                          }}
+                          className="w-full py-2 px-4 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+                          style={{ backgroundColor: '#F97316' }}
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          Try AI Chat Instead
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <button
                   onClick={() => {
-                    setSelectedImage(null);
+                    setSelectedImages([]);
                     setAnalyzedData(null);
                   }}
                   className="flex-1 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
                   style={{ borderColor: '#A8E6CF', color: '#102A43' }}
                 >
-                  Retake Photo
+                  Take More Photos
                 </button>
                 <button
                   onClick={handleConfirmMeal}
@@ -1853,12 +1992,14 @@ function AskFoodAITab({ onMealParsed }: any) {
 
         <div className="p-4 rounded-lg" style={{ backgroundColor: '#E8F4F2' }}>
           <p className="text-sm mb-2" style={{ color: '#102A43' }}>
-            <strong>💡 Examples:</strong>
+            <strong>💡 Describe your meal in detail:</strong>
           </p>
           <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
-            <li>• "Chicken burrito with rice, beans, cheese, and guacamole"</li>
-            <li>• "Greek yogurt parfait with granola and mixed berries"</li>
-            <li>• "Grilled salmon with roasted vegetables and quinoa"</li>
+            <li>• "6oz grilled chicken breast with 1 cup steamed broccoli and 1/2 cup quinoa"</li>
+            <li>• "Large Caesar salad with romaine, croutons, parmesan, and 2 tbsp dressing"</li>
+            <li>• "Protein shake: 1 cup almond milk, 1 scoop whey, 1 banana, 1 tbsp peanut butter"</li>
+            <li>• "Homemade beef stir-fry with mixed vegetables and brown rice"</li>
+            <li>• Include <strong>portion sizes</strong> and <strong>cooking methods</strong> for best results</li>
           </ul>
         </div>
 

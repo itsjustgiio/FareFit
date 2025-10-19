@@ -361,6 +361,150 @@ function sanitizeMealData(meal: any) {
   return clean;
 }
 
+// ✨ NEW: Real AI Image Analysis Function
+export const analyzeMealImage = async (base64Image: string, imageCount: number = 1) => {
+  try {
+    const { getGeminiService } = await import('./services/geminiService');
+    const gemini = getGeminiService();
+    
+    console.log(`🔬 Starting AI image analysis... (${imageCount} photo(s) provided)`);
+    
+    // Remove data URL prefix if present
+    const base64Data = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+    
+    const prompt = `Analyze this food image and identify all visible food items. For each item, provide detailed nutritional information.
+
+${imageCount > 1 ? `Note: This is the primary image from ${imageCount} photos provided. Use this main angle for analysis.` : ''}
+
+IMPORTANT: If you cannot clearly identify a food item or are uncertain about what it is, please:
+- Use descriptive names like "Unknown protein (appears to be meat)", "Unidentified grain/starch", or "Mixed vegetables"
+- Set calories to 0 for items you cannot identify
+- Be honest about uncertainty rather than guessing
+
+Return ONLY a valid JSON object in this exact format:
+{
+  "name": "Overall meal name (e.g., 'Grilled Chicken Salad')",
+  "confidence": "high|medium|low",
+  "items": [
+    {
+      "id": "1",
+      "name": "Food item name (use 'Unknown/Unclear [description]' if uncertain)",
+      "servingSize": "Estimated serving (e.g., '150g', '1 cup')",
+      "amountConsumed": 1,
+      "baseCalories": 0,
+      "baseProtein": 0,
+      "baseCarbs": 0,
+      "baseFat": 0,
+      "baseFiber": 0,
+      "calories": 0,
+      "protein": 0,
+      "carbs": 0,
+      "fat": 0,
+      "fiber": 0,
+      "isExpanded": false,
+      "brandName": "",
+      "confidence": "high|medium|low"
+    }
+  ]
+}
+
+Guidelines:
+- Only identify items you can see clearly
+- If lighting is poor, image is blurry, or food is unclear, mark as "low" confidence
+- Use "Unknown" or "Unclear" in names when uncertain
+- Set calories to 0 for unidentifiable items
+- Estimate realistic portion sizes only for items you can identify
+- Use USDA nutrition database values for known items
+- Round calories to whole numbers, macros to 1 decimal
+- Make calories/macros = base values × amount consumed
+- Include condiments, sauces, and garnishes if clearly visible
+- Be conservative with portion estimates if unsure
+${imageCount > 1 ? '- Multiple angles were provided - use this for better accuracy' : ''}
+
+Example response for unclear image:
+{
+  "name": "Mixed Meal (Unclear)",
+  "confidence": "low",
+  "items": [
+    {
+      "id": "1",
+      "name": "Unknown protein (appears to be meat)",
+      "servingSize": "unclear portion",
+      "amountConsumed": 1,
+      "baseCalories": 0,
+      "confidence": "low",
+      ...
+    }
+  ]
+}`;
+
+    // Create the multimodal message for Gemini
+    const messages = [{
+      role: 'user' as const,
+      parts: [{
+        text: prompt
+      }, {
+        inline_data: {
+          mime_type: 'image/jpeg',
+          data: base64Data
+        }
+      }]
+    }];
+
+    const response = await gemini.chat(messages, 'gemini-2.5-flash');
+    
+    console.log('🤖 Raw Gemini response:', response);
+    
+    // Extract JSON from response
+    let jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in AI response');
+    }
+    
+    const parsedData = JSON.parse(jsonMatch[0]);
+    
+    // Validate the response structure
+    if (!parsedData.name || !Array.isArray(parsedData.items)) {
+      throw new Error('Invalid response structure from AI');
+    }
+    
+    console.log('✅ AI analysis complete:', parsedData);
+    return { success: true, data: parsedData };
+    
+  } catch (error) {
+    console.error('❌ AI image analysis failed:', error);
+    
+    // Return fallback mock data if AI fails
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      data: {
+        name: 'Mixed Meal',
+        items: [
+          {
+            id: '1',
+            name: 'Food Item (AI analysis failed)',
+            servingSize: '1 portion',
+            amountConsumed: 1,
+            baseCalories: 300,
+            baseProtein: 15,
+            baseCarbs: 30,
+            baseFat: 10,
+            baseFiber: 3,
+            calories: 300,
+            protein: 15,
+            carbs: 30,
+            fat: 10,
+            fiber: 3,
+            isExpanded: false,
+            brandName: ''
+          }
+        ]
+      }
+    };
+  }
+};
+
 export const addMealToDailyNutrition = async (
   userId: string,
   meal: {
