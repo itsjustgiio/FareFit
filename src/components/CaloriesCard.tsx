@@ -1,5 +1,6 @@
 import { useUserMeals } from "../hooks/useUserMeals";
 import type { PlanSummary } from '../types/planTypes';
+import { useEffect } from 'react';
 
 interface CaloriesCardProps {
   onFoodAIClick?: () => void;
@@ -25,6 +26,12 @@ interface CaloriesCardProps {
 export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, planSummary, loggedMacros }: CaloriesCardProps) {
   // Use enhanced real-time data from Firestore
   const { meals, loading, totals } = useUserMeals();
+
+  // Step 4: Console check to confirm planSummary data
+  useEffect(() => {
+    console.log("📊 Received planSummary:", planSummary);
+    console.log("📊 Received userGoal:", userGoal);
+  }, [planSummary, userGoal]);
 
   // Loading state
   if (loading) {
@@ -57,6 +64,15 @@ export function CaloriesCard({ onFoodAIClick, onLogMealClick, userGoal, planSumm
   const targetFat = planSummary?.macros.fat || userGoal?.fat || 73;
   const displayFiber = totals.fiber;
   const targetFiber = planSummary?.macros.fiber || userGoal?.fiber || 30;
+
+  // Log the source of target values for debugging
+  console.log('📊 CaloriesCard target values source:', {
+    calories: { value: targetCalories, source: planSummary?.targetCalories ? 'planSummary' : userGoal?.targetCalories ? 'userGoal' : 'default' },
+    protein: { value: targetProtein, source: planSummary?.macros.protein ? 'planSummary' : userGoal?.protein ? 'userGoal' : 'default' },
+    carbs: { value: targetCarbs, source: planSummary?.macros.carbs ? 'planSummary' : userGoal?.carbs ? 'userGoal' : 'default' },
+    fat: { value: targetFat, source: planSummary?.macros.fat ? 'planSummary' : userGoal?.fat ? 'userGoal' : 'default' },
+    fiber: { value: targetFiber, source: planSummary?.macros.fiber ? 'planSummary' : userGoal?.fiber ? 'userGoal' : 'default' }
+  });
 
   return (
     <div 

@@ -350,6 +350,27 @@ export default function App() {
       tdee: plan.tdee,
       macros: plan.macros
     });
+    
+    // Step 1: Convert AI plan data to planSummary format immediately
+    const aiPlanSummary: PlanSummary = {
+      targetCalories: plan.targetCalories,
+      macros: {
+        protein: plan.macros.protein,
+        carbs: plan.macros.carbs,
+        fat: plan.macros.fat,
+        fiber: plan.macros.fiber,
+      },
+      goalType: plan.goalType,
+      currentWeek: 1, // Default to week 1 for new plans
+      currentFocus: plan.planContent?.weeks?.[0]?.focus || 'Getting Started',
+      generatedAt: plan.generatedAt,
+      version: plan.version
+    };
+    
+    // Immediately update the planSummary state for instant UI update
+    setPlanSummary(aiPlanSummary);
+    console.log('✅ Plan summary updated immediately:', aiPlanSummary);
+    
     console.log('🔍 Debug - hasSeenPlanModal:', hasSeenPlanModal);
     console.log('🔍 Debug - localStorage hasSeenPlanModal:', localStorage.getItem('hasSeenPlanModal'));
     
@@ -1208,6 +1229,10 @@ export default function App() {
                   if (response.macroData) {
                     console.log('🎯 Extracted macro data for fitness goals:', response.macroData);
                   }
+                  
+                  // Test the plan handling flow immediately
+                  console.log('🧪 Testing handlePlanGenerated flow...');
+                  await handlePlanGenerated(response.plan);
                   
                   // Set this plan in state for testing
                   setGeneratedPlan(response.plan);
