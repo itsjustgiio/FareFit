@@ -81,6 +81,7 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
         meal_type: mealType,
         total_calories: 0,
         foods: [],
+        meal_time: null, // Track the time for this meal group
       };
     }
     
@@ -94,8 +95,19 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
       serving: meal.serving_size?.toString() || '1',
     });
     
+    // Capture the earliest meal_time for this meal type (if available)
+    if (meal.meal_time) {
+      const mealTime = typeof meal.meal_time === 'object' && meal.meal_time.seconds 
+        ? new Date(meal.meal_time.seconds * 1000) // Firestore Timestamp
+        : new Date(meal.meal_time); // Regular Date
+      
+      if (!groups[mealType].meal_time || mealTime < groups[mealType].meal_time) {
+        groups[mealType].meal_time = mealTime;
+      }
+    }
+    
     return groups;
-  }, {} as Record<string, { meal_type: string; total_calories: number; foods: any[] }>);
+  }, {} as Record<string, { meal_type: string; total_calories: number; foods: any[]; meal_time: Date | null }>);
 
   // Convert grouped meals to timeline format
   const mealEntries: MealEntry[] = Object.values(groupedMeals).map((group, index) => ({
@@ -103,8 +115,12 @@ export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoa
     type: 'meal' as const,
     name: group.meal_type.toLowerCase().replace(/^\w/, c => c.toUpperCase()),
     calories: group.total_calories,
-    time: '—', // Will be enhanced in Phase 2 when meal_time is properly stored
-    timestamp: new Date(), // Default to now until proper timestamps are available
+    time: group.meal_time ? group.meal_time.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: true 
+    }) : '—',
+    timestamp: group.meal_time || new Date(),
     status: 'CONSUMED',
     foods: group.foods,
   }));

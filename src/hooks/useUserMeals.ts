@@ -14,6 +14,7 @@ interface Meal {
   carbs: number;
   fats: number;
   fiber: number;
+  meal_time?: any; // Can be Firestore Timestamp or Date
 }
 
 interface NutritionTotals {
@@ -67,7 +68,12 @@ export function useUserMeals(targetDate?: Date) {
           const filteredMeals = allMeals.filter(meal => meal.meal_date === dateString);
           
           console.log("🗓️ Filtering meals for date:", dateString);
-          console.log("📋 Found meals:", filteredMeals.length, "out of", allMeals.length, "total meals");
+          console.log("📋 All meals in Firestore:", allMeals.map(m => ({ 
+            food: m.food_name, 
+            date: m.meal_date, 
+            type: m.meal_type 
+          })));
+          console.log("📋 Filtered meals:", filteredMeals.length, "out of", allMeals.length, "total meals");
           
           // Calculate totals for the selected date
           const calculatedTotals = filteredMeals.reduce(

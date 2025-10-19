@@ -61,6 +61,7 @@ export async function showUserMeals() {
           console.log(`    ${index + 1}. ${meal.food_name || "Unnamed"} ${meal.brand ? `(${meal.brand})` : ''}`);
           console.log(`       Serving: ${meal.serving_size || 'N/A'}`);
           console.log(`       📊 ${meal.calories || 0} kcal | 🥩 ${meal.protein || 0}g | 🍞 ${meal.carbs || 0}g | 🧈 ${meal.fats || 0}g | 🌾 ${meal.fiber || 0}g`);
+          console.log(`       ⏰ Time: ${meal.meal_time ? new Date(meal.meal_time.seconds * 1000).toLocaleTimeString() : 'No time logged'}`);
         });
       });
     });

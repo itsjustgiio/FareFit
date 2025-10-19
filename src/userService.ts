@@ -261,8 +261,17 @@ const getTodayEST = (): string => {
 // Export this function so other components can use the same date logic
 export const getDateInEasternTimezone = (date?: Date): string => {
   const targetDate = date || new Date();
-  const easternDate = new Date(targetDate.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  return easternDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  
+  // Get the date in Eastern timezone using Intl.DateTimeFormat
+  const easternFormatter = new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  const easternDateString = easternFormatter.format(targetDate); // Returns "YYYY-MM-DD"
+  return easternDateString;
 };
 
 export const getUserFitnessGoals = async (userId: string) => {
