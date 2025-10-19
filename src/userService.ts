@@ -255,11 +255,14 @@ export const getTodayMeals = async (userId: string) => {
 };
 
 const getTodayEST = (): string => {
-  const estOffset = -5 * 60; // EST offset in minutes
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const estDate = new Date(utc + estOffset * 60000);
-  return estDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  return getDateInEasternTimezone();
+};
+
+// Export this function so other components can use the same date logic
+export const getDateInEasternTimezone = (date?: Date): string => {
+  const targetDate = date || new Date();
+  const easternDate = new Date(targetDate.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  return easternDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
 };
 
 export const getUserFitnessGoals = async (userId: string) => {

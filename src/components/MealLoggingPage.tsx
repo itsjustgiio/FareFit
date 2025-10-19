@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak, addBarcodeToHistory, getBarcodeHistory} from '../userService';
+import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak, addBarcodeToHistory, getBarcodeHistory, getDateInEasternTimezone} from '../userService';
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
 import { BarcodeScannerCamera } from './BarcodeScannerCamera';
@@ -259,7 +259,7 @@ export function MealLoggingPage({ onBack, onMealLogged }: MealLoggingPageProps) 
         fiber: item.fiber,
         brand: item.brandName,
         meal_time: new Date(),
-        meal_date: new Date().toISOString().split("T")[0]
+        meal_date: getDateInEasternTimezone() // 👈 Use Eastern timezone
       });
       await updateUserFareScoreOnLog(userId, "logged_food");
     }

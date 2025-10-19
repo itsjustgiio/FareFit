@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getFirestore, doc, onSnapshot } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { getDateInEasternTimezone } from "../userService";
 
 interface Meal {
   meal_date: string;
@@ -59,10 +60,14 @@ export function useUserMeals(targetDate?: Date) {
           const allMeals = (data?.todays_meals || []) as Meal[];
           
           // Filter for target date (defaults to today if not specified)
+          // Use Eastern timezone to match the meal logging date format
           const dateString = targetDate 
-            ? targetDate.toISOString().split('T')[0] 
-            : new Date().toISOString().split('T')[0];
+            ? getDateInEasternTimezone(targetDate)
+            : getDateInEasternTimezone(); // Today in Eastern timezone
           const filteredMeals = allMeals.filter(meal => meal.meal_date === dateString);
+          
+          console.log("🗓️ Filtering meals for date:", dateString);
+          console.log("📋 Found meals:", filteredMeals.length, "out of", allMeals.length, "total meals");
           
           // Calculate totals for the selected date
           const calculatedTotals = filteredMeals.reduce(
