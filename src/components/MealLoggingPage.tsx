@@ -1931,6 +1931,12 @@ function AskFoodAITab({ onMealParsed }: any) {
             placeholder="e.g., Protein shake with almond milk, 1 scoop whey, banana, and peanut butter"
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleAskAI();
+              }
+            }}
             rows={4}
             className="mt-1.5"
             disabled={isProcessing}

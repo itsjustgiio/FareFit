@@ -19,18 +19,18 @@ Estimate macros (calories, protein, carbs, fat, fiber) as realistic averages.
     {
       "id": "string (unique id)",
       "name": "string (food name)",
-      "servingSize": "string (e.g. 1 cup, 100g, 2 slices)",
-      "amountConsumed": "number (grams or ml)",
-      "baseCalories": number,
-      "baseProtein": number,
-      "baseCarbs": number,
-      "baseFat": number,
-      "baseFiber": number,
-      "calories": number,
-      "protein": number,
-      "carbs": number,
-      "fat": number,
-      "fiber": number,
+      "servingSize": "string (e.g. 1 cookie, 1 cup, 100g, 2 slices)",
+      "amountConsumed": "number (how many servings - e.g. 3 for '3 cookies')",
+      "baseCalories": "number (calories per 1 serving)",
+      "baseProtein": "number (protein per 1 serving)",
+      "baseCarbs": "number (carbs per 1 serving)",
+      "baseFat": "number (fat per 1 serving)",
+      "baseFiber": "number (fiber per 1 serving)",
+      "calories": "number (total calories = baseCalories × amountConsumed)",
+      "protein": "number (total protein = baseProtein × amountConsumed)",
+      "carbs": "number (total carbs = baseCarbs × amountConsumed)",
+      "fat": "number (total fat = baseFat × amountConsumed)",
+      "fiber": "number (total fiber = baseFiber × amountConsumed)",
       "isExpanded": false
     }
   ]
@@ -38,13 +38,21 @@ Estimate macros (calories, protein, carbs, fat, fiber) as realistic averages.
 ---
 
 💡 Examples:
+"3 chip ahoy cookies"
+→ servingSize: "1 cookie", amountConsumed: 3, baseCalories: 53, calories: 159
+
+"2 cups of rice"
+→ servingSize: "1 cup", amountConsumed: 2, baseCalories: 205, calories: 410
+
+"1 banana"
+→ servingSize: "1 medium banana", amountConsumed: 1, baseCalories: 105, calories: 105
 "Protein shake with almond milk, banana, 1 scoop whey, and peanut butter"
 → name: "Protein Shake"
-→ items: almond milk, banana, whey protein, peanut butter
+→ items: almond milk (1 cup, amount: 1), banana (1 medium, amount: 1), whey protein (1 scoop, amount: 1), peanut butter (1 tbsp, amount: 1)
 
 "Grilled chicken with rice and broccoli"
-→ name: "Chicken Meal"
-→ items: grilled chicken breast, cooked white rice, steamed broccoli
+→ name: "Chicken Meal"  
+→ items: grilled chicken breast (6oz portion, amount: 1), cooked white rice (1 cup, amount: 1), steamed broccoli (1 cup, amount: 1)
 
 ---
 
