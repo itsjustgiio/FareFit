@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { doc, setDoc, getDoc, Timestamp, updateDoc} from "firebase/firestore";
+import { doc, setDoc, getDoc, Timestamp, updateDoc, collection, query, orderBy, limit, getDocs, where } from "firebase/firestore";
 import { 
   getAuth, 
   createUserWithEmailAndPassword, 
@@ -155,7 +155,23 @@ export async function createUserRecords(userId: string, name: string, email: str
         }]
     });
 
-    // Help me here chat gpt
+    // Get real user creation date from Firebase Auth
+    const auth = getAuth();
+    const user = auth.currentUser;
+    const actualJoinDate = user?.metadata?.creationTime 
+      ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long', 
+          day: 'numeric'
+        })
+      : new Date().toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+    
+    console.log(`✅ Creating FareScore with real join date: ${actualJoinDate}`);
+
     await setDoc(doc(db, "FareScore", userId), {
       score: 350,
       tier: null,
@@ -164,7 +180,7 @@ export async function createUserRecords(userId: string, name: string, email: str
       streakDays: 0,
       lastStreakDate: '2025-10-17', // NEW FIELD
       penalties: 0,
-      joinDate: 'August 15, 2025',
+      joinDate: actualJoinDate, // ← Now uses real Firebase Auth creation date!
       history: [
         { date: '2025-10-17', score: 350 }
       ]
@@ -696,7 +712,7 @@ export const checkAndClearDailyWorkout = async () => {
   const allWorkouts = data.workout || [];
   
   // Remove any existing workout for today (in case of stale data)
-  const filteredWorkouts = allWorkouts.filter(day => day.date !== getTodayEST());
+  const filteredWorkouts = allWorkouts.filter((day: any) => day.date !== getTodayEST());
   
   // Update the document
   await setDoc(workoutDocRef, { 
@@ -725,4 +741,245 @@ export const getWorkoutHistory = async () => {
 
   const data = workoutDocSnap.data();
   return data.workout || [];
+};
+
+// ============================================================================
+// LEADERBOARD FUNCTIONS
+// ============================================================================
+
+interface LeaderboardEntry {
+  rank: number;
+  name: string;
+  username: string;
+  avatar: string;
+  fareScore: number;
+  tier: string;
+  change: number;
+  isCurrentUser?: boolean;
+}
+
+// Helper function to get tier from score (import from fareScoreCalculator if available)
+const getTierFromScore = (score: number): string => {
+  if (score >= 800) return 'FareFit Elite';
+  if (score >= 700) return 'Goal Crusher';
+  if (score >= 550) return 'Consistent Tracker';
+  if (score >= 400) return 'Building Habits';
+  return 'Starting Journey';
+};
+
+/**
+ * Get global leaderboard - Top users by FareScore
+ */
+export const getGlobalLeaderboard = async (limitCount: number = 50): Promise<LeaderboardEntry[]> => {
+  try {
+    console.log(`🏆 Fetching global leaderboard (top ${limitCount})`);
+    
+    // Query all FareScore documents, ordered by score descending
+    const leaderboardQuery = query(
+      collection(db, "FareScore"),
+      orderBy("score", "desc"),
+      limit(limitCount)
+    );
+    
+    const snapshot = await getDocs(leaderboardQuery);
+    const leaderboardData: LeaderboardEntry[] = [];
+    const currentUserId = getAuth().currentUser?.uid;
+    
+    // Process each user in the leaderboard
+    let rank = 1;
+    for (const fareScoreDoc of snapshot.docs) {
+      const fareData = fareScoreDoc.data();
+      const userId = fareScoreDoc.id;
+      
+      // Get user profile for name/email
+      const userDoc = await getDoc(doc(db, "Users", userId));
+      const userData = userDoc.exists() ? userDoc.data() : {};
+      
+      // Generate username from name
+      const fullName = userData.full_name || userData.name || "Anonymous User";
+      const username = `@${fullName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 12) || 'user' + userId.substring(0, 4)}`;
+      
+      leaderboardData.push({
+        rank,
+        name: fullName,
+        username,
+        avatar: userData.avatar || '',
+        fareScore: fareData.score || 350,
+        tier: getTierFromScore(fareData.score || 350),
+        change: fareData.weeklyChange || 0,
+        isCurrentUser: userId === currentUserId
+      });
+      
+      rank++;
+    }
+    
+    console.log(`✅ Global leaderboard loaded: ${leaderboardData.length} users`);
+    return leaderboardData;
+    
+  } catch (error) {
+    console.error("❌ Error fetching global leaderboard:", error);
+    return [];
+  }
+};
+
+// ============================================================================
+// FRIENDS MANAGEMENT
+// ============================================================================
+
+/**
+ * Add a friend by userId
+ */
+export const addFriend = async (currentUserId: string, friendUserId: string): Promise<boolean> => {
+  try {
+    // Add friend to current user's friends list
+    const currentUserFriendsRef = doc(db, "User_Friends", currentUserId);
+    const currentUserFriendsSnap = await getDoc(currentUserFriendsRef);
+    
+    let currentFriends: string[] = [];
+    if (currentUserFriendsSnap.exists()) {
+      currentFriends = currentUserFriendsSnap.data().friendsList || [];
+    }
+    
+    // Check if already friends
+    if (currentFriends.includes(friendUserId)) {
+      console.log("Already friends with this user");
+      return false;
+    }
+    
+    // Add to friends list
+    currentFriends.push(friendUserId);
+    await setDoc(currentUserFriendsRef, { friendsList: currentFriends });
+    
+    // Add current user to friend's friends list (mutual friendship)
+    const friendUserFriendsRef = doc(db, "User_Friends", friendUserId);
+    const friendUserFriendsSnap = await getDoc(friendUserFriendsRef);
+    
+    let friendFriends: string[] = [];
+    if (friendUserFriendsSnap.exists()) {
+      friendFriends = friendUserFriendsSnap.data().friendsList || [];
+    }
+    
+    if (!friendFriends.includes(currentUserId)) {
+      friendFriends.push(currentUserId);
+      await setDoc(friendUserFriendsRef, { friendsList: friendFriends });
+    }
+    
+    console.log(`✅ Friend added: ${currentUserId} <-> ${friendUserId}`);
+    return true;
+    
+  } catch (error) {
+    console.error("❌ Error adding friend:", error);
+    return false;
+  }
+};
+
+/**
+ * Get user's friends list
+ */
+export const getUserFriends = async (userId: string): Promise<string[]> => {
+  try {
+    const friendsDoc = await getDoc(doc(db, "User_Friends", userId));
+    if (friendsDoc.exists()) {
+      return friendsDoc.data().friendsList || [];
+    }
+    return [];
+  } catch (error) {
+    console.error("❌ Error getting user friends:", error);
+    return [];
+  }
+};
+
+/**
+ * Get friends leaderboard - User's actual friends ranked by FareScore
+ */
+export const getFriendsLeaderboard = async (): Promise<LeaderboardEntry[]> => {
+  try {
+    const currentUserId = getAuth().currentUser?.uid;
+    if (!currentUserId) {
+      console.log("❌ No current user for friends leaderboard");
+      return [];
+    }
+    
+    console.log("👥 Fetching real friends leaderboard");
+    
+    // Get user's actual friends list
+    const friendIds = await getUserFriends(currentUserId);
+    
+    if (friendIds.length === 0) {
+      console.log("📭 No friends found");
+      return [];
+    }
+    
+    console.log(`Found ${friendIds.length} friends:`, friendIds);
+    
+    // Get FareScore data for all friends
+    const friendsData: LeaderboardEntry[] = [];
+    
+    for (const friendId of friendIds) {
+      try {
+        // Get friend's FareScore
+        const fareScoreDoc = await getDoc(doc(db, "FareScore", friendId));
+        const fareData = fareScoreDoc.exists() ? fareScoreDoc.data() : { score: 350 };
+        
+        // Get friend's profile
+        const userDoc = await getDoc(doc(db, "Users", friendId));
+        const userData = userDoc.exists() ? userDoc.data() : {};
+        
+        const fullName = userData.full_name || userData.name || "Friend";
+        const username = `@${fullName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 12) || 'friend' + friendId.substring(0, 4)}`;
+        
+        friendsData.push({
+          rank: 0, // Will be set after sorting
+          name: fullName,
+          username,
+          avatar: userData.avatar || '',
+          fareScore: fareData.score || 350,
+          tier: getTierFromScore(fareData.score || 350),
+          change: fareData.weeklyChange || 0,
+          isCurrentUser: friendId === currentUserId
+        });
+        
+      } catch (error) {
+        console.error(`❌ Error fetching data for friend ${friendId}:`, error);
+      }
+    }
+    
+    // Add current user to the list
+    try {
+      const userFareDoc = await getDoc(doc(db, "FareScore", currentUserId));
+      const userFareData = userFareDoc.exists() ? userFareDoc.data() : { score: 350 };
+      
+      const userDoc = await getDoc(doc(db, "Users", currentUserId));
+      const userData = userDoc.exists() ? userDoc.data() : {};
+      
+      const fullName = userData.full_name || userData.name || "You";
+      const username = `@${fullName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 12) || 'you'}`;
+      
+      friendsData.push({
+        rank: 0, // Will be set after sorting
+        name: fullName,
+        username,
+        avatar: userData.avatar || '',
+        fareScore: userFareData.score || 350,
+        tier: getTierFromScore(userFareData.score || 350),
+        change: userFareData.weeklyChange || 0,
+        isCurrentUser: true
+      });
+    } catch (error) {
+      console.error("❌ Error fetching current user data:", error);
+    }
+    
+    // Sort by score and assign ranks
+    friendsData.sort((a, b) => b.fareScore - a.fareScore);
+    friendsData.forEach((friend, index) => {
+      friend.rank = index + 1;
+    });
+    
+    console.log(`✅ Real friends leaderboard loaded: ${friendsData.length} friends`);
+    return friendsData;
+    
+  } catch (error) {
+    console.error("❌ Error fetching friends leaderboard:", error);
+    return [];
+  }
 };

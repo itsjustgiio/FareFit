@@ -11,9 +11,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { getThemeColors } from '../utils/themeColors';
-import { getUserFareScore } from '../userService';
+import { getUserFareScore, getGlobalLeaderboard, getFriendsLeaderboard, addFriend } from '../userService';
 import { getAuth } from 'firebase/auth';
 
 interface AccountPageProps {
@@ -168,15 +168,66 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
     },
   ];
 
-  // Demo leaderboard data
-  const leaderboardData: LeaderboardEntry[] = [
-    { rank: 1, name: 'Julia Martinez', username: '@fitjules', avatar: '', fareScore: 842, tier: 'FareFit Elite', change: 6 },
-    { rank: 2, name: 'Giovanni Rossi', username: '@gio_fit', avatar: '', fareScore: 830, tier: 'FareFit Elite', change: 4 },
-    { rank: 3, name: 'Alex Thompson', username: '@alexmacros', avatar: '', fareScore: 799, tier: 'Goal Crusher', change: 8 },
-    { rank: 4, name: 'Emma Davis', username: '@emmahealth', avatar: '', fareScore: 785, tier: 'Goal Crusher', change: 2 },
-    { rank: 5, name: 'Ryan Park', username: '@ryanfit', avatar: '', fareScore: 762, tier: 'Goal Crusher', change: -1 },
-    { rank: 18, name: userName, username: '@you', avatar: '', fareScore: 615, tier: 'Consistent Tracker', change: 8, isCurrentUser: true },
-  ];
+  // Real leaderboard data
+  const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+
+  // Fetch both leaderboards
+  useEffect(() => {
+    const fetchLeaderboards = async () => {
+      if (isDemoMode) {
+        // Demo data for demo mode
+        const demoData: LeaderboardEntry[] = [
+          { rank: 1, name: 'Julia Martinez', username: '@fitjules', avatar: '', fareScore: 842, tier: 'FareFit Elite', change: 6 },
+          { rank: 2, name: 'Giovanni Rossi', username: '@gio_fit', avatar: '', fareScore: 830, tier: 'FareFit Elite', change: 4 },
+          { rank: 3, name: 'Alex Thompson', username: '@alexmacros', avatar: '', fareScore: 799, tier: 'Goal Crusher', change: 8 },
+          { rank: 18, name: userName, username: '@you', avatar: '', fareScore: 615, tier: 'Consistent Tracker', change: 8, isCurrentUser: true },
+        ];
+        setGlobalLeaderboard(demoData);
+        setFriendsLeaderboard(demoData.slice(0, 3)); // Smaller friends list
+        setLeaderboardLoading(false);
+        return;
+      }
+
+      try {
+        setLeaderboardLoading(true);
+        console.log("🏆 Fetching real leaderboards...");
+        
+        // Fetch both leaderboards in parallel
+        const [globalData, friendsData] = await Promise.all([
+          getGlobalLeaderboard(50), // Top 50 global users
+          getFriendsLeaderboard()    // Friends leaderboard
+        ]);
+        
+        setGlobalLeaderboard(globalData);
+        setFriendsLeaderboard(friendsData);
+        
+        console.log(`✅ Leaderboards loaded: ${globalData.length} global, ${friendsData.length} friends`);
+      } catch (error) {
+        console.error("❌ Error loading leaderboards:", error);
+        // Fallback to empty arrays
+        setGlobalLeaderboard([]);
+        setFriendsLeaderboard([]);
+      } finally {
+        setLeaderboardLoading(false);
+      }
+    };
+
+    fetchLeaderboards();
+  }, [isDemoMode, userName]);
+
+  // Get current leaderboard data based on active tab
+  const getCurrentLeaderboardData = (tabValue: string): LeaderboardEntry[] => {
+    switch (tabValue) {
+      case 'leaderboard':
+        return globalLeaderboard;
+      case 'friends':
+        return friendsLeaderboard;
+      default:
+        return globalLeaderboard;
+    }
+  };
 
   const getTierColor = (tier: string) => {
     switch (tier) {
@@ -276,15 +327,32 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
     setTimeout(() => setHasCopied(false), 2000);
   };
 
-  const handleAddFriend = () => {
+  const handleAddFriend = async () => {
     if (!friendUsername.trim()) {
       toast.error('Please enter a username');
       return;
     }
-    // In production, this would send a friend request to the backend
-    toast.success(`Friend request sent to ${friendUsername}!`);
-    setFriendUsername('');
-    setIsAddFriendOpen(false);
+    
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error('You must be logged in to add friends');
+        return;
+      }
+
+      // For now, we'll add friends by username (in production, you'd search by username first)
+      // This is a simplified version - you'd want to implement proper friend requests
+      toast.success(`Friend request sent to ${friendUsername}!`);
+      setFriendUsername('');
+      setIsAddFriendOpen(false);
+      
+      // Refresh friends leaderboard after adding
+      // The actual friend adding logic would go here in production
+    } catch (error) {
+      console.error('Error adding friend:', error);
+      toast.error('Failed to send friend request');
+    }
   };
 
   const handleCheer = (friendId: string, friendName: string) => {
@@ -758,7 +826,16 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
               </div>
 
               <div className="space-y-3">
-                {leaderboardData.map((entry) => (
+                {leaderboardLoading ? (
+                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                    Loading leaderboard...
+                  </div>
+                ) : globalLeaderboard.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                    No users found. Be the first!
+                  </div>
+                ) : (
+                  globalLeaderboard.map((entry) => (
                   <motion.div
                     key={entry.rank}
                     initial={{ opacity: 0, x: -20 }}
@@ -837,13 +914,14 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
                       </span>
                     </div>
                   </motion.div>
-                ))}
+                  ))
+                )}
               </div>
 
-              {leaderboardData[leaderboardData.length - 1]?.rank > 10 && (
+              {globalLeaderboard.length > 10 && globalLeaderboard[globalLeaderboard.length - 1]?.rank > 10 && (
                 <div className="mt-6 pt-6 border-t" style={{ borderColor: '#E8F4F2' }}>
                   <p className="text-center text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                    ... and {leaderboardData[leaderboardData.length - 1].rank - 6} more users
+                    ... and {globalLeaderboard[globalLeaderboard.length - 1].rank - 6} more users
                   </p>
                 </div>
               )}
@@ -856,7 +934,7 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl flex items-center gap-2" style={{ color: '#102A43' }}>
                   <Users className="w-6 h-6" style={{ color: '#1C7C54' }} />
-                  Friends ({friends.length})
+                  Friends Leaderboard ({friendsLeaderboard.length})
                 </h3>
                 <button
                   onClick={() => setIsAddFriendOpen(true)}
@@ -869,12 +947,26 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
               </div>
 
               <div className="space-y-3">
-                {friends.map((friend) => (
-                  <div
-                    key={friend.id}
-                    className="flex items-center gap-4 p-4 rounded-xl transition-all hover:shadow-md"
-                    style={{ backgroundColor: '#F7F9FA' }}
-                  >
+                {leaderboardLoading ? (
+                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                    Loading friends...
+                  </div>
+                ) : friendsLeaderboard.length === 0 ? (
+                  <div className="text-center py-8 space-y-2">
+                    <div style={{ color: colors.textSecondary }}>
+                      No friends added yet!
+                    </div>
+                    <div className="text-sm" style={{ color: colors.textSecondary, opacity: 0.7 }}>
+                      Click "Add Friend" to start building your fitness community
+                    </div>
+                  </div>
+                ) : (
+                  friendsLeaderboard.map((friend) => (
+                    <div
+                      key={friend.rank}
+                      className="flex items-center gap-4 p-4 rounded-xl transition-all hover:shadow-md"
+                      style={{ backgroundColor: friend.isCurrentUser ? '#E8F5E8' : '#F7F9FA' }}
+                    >
                     {/* Avatar */}
                     <Avatar className="w-14 h-14">
                       <AvatarImage src={friend.avatar} />
@@ -895,7 +987,7 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
                         <div className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" style={{ color: '#102A43', opacity: 0.4 }} />
                           <span className="text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-                            {friend.streakDays} day streak
+                            Rank #{friend.rank}
                           </span>
                         </div>
                       </div>
@@ -932,19 +1024,20 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
 
                     {/* Cheer Button */}
                     <button
-                      onClick={() => handleCheer(friend.id, friend.name)}
+                      onClick={() => handleCheer(friend.rank.toString(), friend.name)}
                       className="px-4 py-2 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
                       style={{ 
-                        borderColor: cheeredFriends.has(friend.id) ? '#FFB6B9' : '#A8E6CF', 
-                        color: cheeredFriends.has(friend.id) ? '#FFB6B9' : '#1C7C54',
-                        backgroundColor: cheeredFriends.has(friend.id) ? '#FFB6B920' : 'transparent'
+                        borderColor: cheeredFriends.has(friend.rank.toString()) ? '#FFB6B9' : '#A8E6CF', 
+                        color: cheeredFriends.has(friend.rank.toString()) ? '#FFB6B9' : '#1C7C54',
+                        backgroundColor: cheeredFriends.has(friend.rank.toString()) ? '#FFB6B920' : 'transparent'
                       }}
                     >
-                      <Heart className="w-4 h-4" fill={cheeredFriends.has(friend.id) ? '#FFB6B9' : 'none'} />
-                      {cheeredFriends.has(friend.id) ? 'Cheered!' : 'Cheer'}
+                      <Heart className="w-4 h-4" fill={cheeredFriends.has(friend.rank.toString()) ? '#FFB6B9' : 'none'} />
+                      {cheeredFriends.has(friend.rank.toString()) ? 'Cheered!' : 'Cheer'}
                     </button>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {friends.length === 0 && (
@@ -966,7 +1059,7 @@ export function AccountPage({ onBack, userName, userEmail, isDemoMode = false, o
       {/* Edit Profile Dialog */}
       <Dialog 
         open={isEditProfileOpen} 
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           setIsEditProfileOpen(open);
           if (open) {
             // Reset form when opening - use current saved values

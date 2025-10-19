@@ -33,6 +33,8 @@ import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardin
 import { log } from 'node:util';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase'; // your Firebase setup
+import { onSnapshot, doc, getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { checkAndClearDailyWorkout } from './userService';
 
 interface User {
@@ -387,13 +389,50 @@ export default function App() {
     localStorage.setItem('loggedMacros', JSON.stringify(macros));
   };
 
-  // FareScore state (300-850 range)
-  const [fareScore, setFareScore] = useState(() => {
-    const saved = localStorage.getItem('fareScore');
-    return saved ? parseInt(saved) : 615; // Default demo score
-  });
+  // FareScore state (300-850 range) - now real-time from Firestore
+  const [fareScore, setFareScore] = useState(350); // Starting score for new users
+  const [fareScoreChange, setFareScoreChange] = useState(0); // Weekly change
 
-  const [fareScoreChange, setFareScoreChange] = useState(8); // Weekly change
+  // 🔥 Real-time FareScore listener
+  useEffect(() => {
+    const auth = getAuth();
+    const user = auth.currentUser;
+    
+    // Only set up real-time listener for authenticated users (not demo mode)
+    if (!user || isDemoMode) {
+      return;
+    }
+
+    const db = getFirestore();
+    const fareScoreDocRef = doc(db, "FareScore", user.uid);
+    
+    console.log("🔥 Setting up real-time FareScore listener for:", user.uid);
+    
+    const unsubscribe = onSnapshot(fareScoreDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("📊 Real-time FareScore update:", data);
+        
+        setFareScore(data.score || 350);
+        setFareScoreChange(data.weeklyChange || 0); // Optional field for weekly tracking
+      } else {
+        console.log("❌ No FareScore document found, using default values");
+        setFareScore(350); // New user default
+        setFareScoreChange(0);
+      }
+    }, (error) => {
+      console.error("❌ Error listening to FareScore changes:", error);
+      // Fallback to default values on error
+      setFareScore(350);
+      setFareScoreChange(0);
+    });
+
+    // Cleanup listener on unmount or user change
+    return () => {
+      console.log("🔥 Cleaning up FareScore listener");
+      unsubscribe();
+    };
+  }, [isDemoMode]); // Re-run when demo mode changes
 
   // Calculate Daily Score (0-100) - represents today's progress toward max points
   const getDailyScoreBreakdown = (): DailyScoreBreakdown => {
