@@ -33,6 +33,7 @@ import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardin
 import { log } from 'node:util';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase'; // your Firebase setup
+import { checkAndClearDailyWorkout } from './userService';
 
 interface User {
   email: string;
@@ -108,6 +109,22 @@ export default function App() {
     };
     
     checkUserSession();
+  }, []);
+
+  // In your main App component or a layout component
+  useEffect(() => {
+    // Check for midnight clearance on app start
+    checkAndClearDailyWorkout();
+    
+    // Set up interval to check every minute (for midnight detection)
+    const interval = setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === 0 && now.getMinutes() === 0) {
+        checkAndClearDailyWorkout();
+      }
+    }, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Authentication handlers

@@ -23,6 +23,29 @@ interface Meal {
 
 let meals: Meal[] = [];
 
+// Interface for Exercise (based on your previous code)
+interface Exercise {
+  name: string | null;
+  sets: number;
+  reps: number;
+  weight: number;
+  startTime: string | null;
+  endTime: string | null;
+  notes: string | null;
+}
+
+// Interface for a Workout Day
+interface WorkoutDay {
+  day_type: string | null;
+  duration: number;
+  calories_burned: number;
+  total_sets: number;
+  total_reps: number;
+  volume: number;
+  exercises: Exercise[];
+  date: string; // Add date field
+}
+
 export const signupUser = async (email: string, password: string, name: string) => {
   const auth = getAuth();
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -145,6 +168,26 @@ export async function createUserRecords(userId: string, name: string, email: str
       history: [
         { date: '2025-10-17', score: 350 }
       ]
+    });
+
+    await setDoc(doc(db, "Workout_Exercises", userId), {
+      workout: [{
+        day_type: null,
+        duration: 0,
+        calories_burned: 0,
+        total_sets: 0,
+        total_reps: 0,
+        volume: 0, // I dont really care about this
+        exercises: [{
+          name: null,
+          sets: 0,
+          reps: 0,
+          weight: 0, // to be stored in pounds
+          startTime: null,
+          endTime: null,
+          notes: null,
+        }]
+      }]
     });
 
 
@@ -429,6 +472,7 @@ export const updateUserStreak = async (userId: string) => {
   console.log(`✅ Updated streak: ${newStreak}, FareScore: ${newScore}`);
 };
 
+// Add this to your updateUserFareScoreOnLog function
 export const updateUserFareScoreOnLog = async (userId: string, eventName: string) => {
   const docRef = doc(db, "FareScore", userId);
   const docSnap = await getDoc(docRef);
@@ -445,6 +489,8 @@ export const updateUserFareScoreOnLog = async (userId: string, eventName: string
     newScore += 1;
   } else if (eventName === "macros_hit") {
     newScore += 2;
+  } else if (eventName === "logged_workout") {
+    newScore += 3; // Workouts give more points
   } else {
     console.warn(`⚠️ Event "${eventName}" not recognized. No score update.`);
     return;
@@ -543,4 +589,140 @@ export const getUserFareScore = async (userId: string) => {
     console.error("❌ Error fetching FareScore:", err);
     return null;
   }
+};
+
+
+// Get workout exercises for a specific date
+export const getWorkoutExercises = async (date?: string) => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error("User not logged in");
+  }
+
+  const workoutDocRef = doc(db, "Workout_Exercises", user.uid);
+  const workoutDocSnap = await getDoc(workoutDocRef);
+
+  if (!workoutDocSnap.exists()) {
+    console.log("No Workout_Exercises document found for this user");
+    return { workout: [] };
+  }
+
+  const data = workoutDocSnap.data() as { workout: WorkoutDay[] };
+  
+  // If no date specified, return today's workout
+  const targetDate = date || getTodayEST();
+  
+  // Find workout for the specific date
+  const todayWorkout = data.workout.find(day => day.date === targetDate);
+  
+  return {
+    workout: todayWorkout ? [todayWorkout] : [],
+    allWorkouts: data.workout || []
+  };
+};
+
+// Set workout exercises for a specific date
+export const setWorkoutExercises = async (workoutData: WorkoutDay, date?: string) => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error("User not logged in");
+  }
+
+  const workoutDocRef = doc(db, "Workout_Exercises", user.uid);
+  const workoutDocSnap = await getDoc(workoutDocRef);
+
+  const targetDate = date || getTodayEST();
+  
+  let allWorkouts: WorkoutDay[] = [];
+
+  if (workoutDocSnap.exists()) {
+    allWorkouts = workoutDocSnap.data()?.workout || [];
+    
+    // Remove existing workout for this date if it exists
+    allWorkouts = allWorkouts.filter(day => day.date !== targetDate);
+  }
+
+  // Add the new workout with the date
+  const workoutWithDate = {
+    ...workoutData,
+    date: targetDate,
+    updated_at: Timestamp.now()
+  };
+
+  // Keep only last 30 days
+  allWorkouts.push(workoutWithDate);
+  allWorkouts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  allWorkouts = allWorkouts.slice(0, 30);
+
+  // Save to Firestore
+  await setDoc(workoutDocRef, { 
+    workout: allWorkouts,
+    last_updated: Timestamp.now()
+  }, { merge: true });
+
+  console.log("Workout saved for date:", targetDate);
+};
+
+// Check and clear workouts at midnight
+export const checkAndClearDailyWorkout = async () => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    return;
+  }
+
+  const workoutDocRef = doc(db, "Workout_Exercises", user.uid);
+  const workoutDocSnap = await getDoc(workoutDocRef);
+
+  if (!workoutDocSnap.exists()) {
+    return;
+  }
+
+  const data = workoutDocSnap.data();
+  const lastUpdated = data.last_updated?.toDate();
+  const today = new Date(getTodayEST());
+  
+  // Check if we've already updated today
+  if (lastUpdated && lastUpdated.toDateString() === today.toDateString()) {
+    return; // Already updated today
+  }
+
+  // Clear today's workout slot (it will be empty for the new day)
+  const allWorkouts = data.workout || [];
+  
+  // Remove any existing workout for today (in case of stale data)
+  const filteredWorkouts = allWorkouts.filter(day => day.date !== getTodayEST());
+  
+  // Update the document
+  await setDoc(workoutDocRef, { 
+    workout: filteredWorkouts,
+    last_updated: Timestamp.now()
+  }, { merge: true });
+
+  console.log("✅ Daily workout slot cleared for new day");
+};
+
+// Get workout history (last 30 days)
+export const getWorkoutHistory = async () => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error("User not logged in");
+  }
+
+  const workoutDocRef = doc(db, "Workout_Exercises", user.uid);
+  const workoutDocSnap = await getDoc(workoutDocRef);
+
+  if (!workoutDocSnap.exists()) {
+    return [];
+  }
+
+  const data = workoutDocSnap.data();
+  return data.workout || [];
 };
