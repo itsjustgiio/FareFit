@@ -31,6 +31,7 @@ import { ScoreCards } from './components/ScoreCards';
 import DevToolsPage from './components/DevToolsPage';
 import { calculateDailyScore, DailyScoreBreakdown } from './utils/dailyScoreCalculator';
 import { logInUser, logInWithGoogle, signupUser, createUserRecords, getOnboardingStatus, setOnboardingComplete, migrateOnboardingStatus, getUserActivePlanSummary, getUserProfile } from './userService';
+import { useUserFitnessGoal } from './hooks/useUserFitnessGoal';
 
 import { log } from 'node:util';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
@@ -49,6 +50,16 @@ interface User {
 }
 
 export default function App() {
+  // Theme state
+  // ...existing code...
+  // Authentication state (keep only this set)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [authView, setAuthView] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'app'>('landing');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  // Fetch the user's fitness goal from Firestore (must be after currentUser is declared)
+  const { goal: userGoal, loading: goalLoading, error: goalError } = useUserFitnessGoal(currentUser?.uid);
   // Theme state
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('farefit_dark_mode');
@@ -70,11 +81,7 @@ export default function App() {
     localStorage.setItem('farefit_dark_mode', String(newMode));
   };
 
-  // Authentication state
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [authView, setAuthView] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'app'>('landing');
+  // (Removed duplicate state declarations for isAuthenticated, user, userProfile, authView)
 
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai' | 'food-assistant' | 'workout-detail' | 'daily-timeline' | 'meal-logging' | 'account' | 'dev-tools'>('dashboard');
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
@@ -434,11 +441,7 @@ export default function App() {
     setUser(updatedUser);
   };
   
-  // Load saved goal from localStorage
-  const [userGoal, setUserGoal] = useState<GoalData | null>(() => {
-    const saved = localStorage.getItem('fitnessGoal');
-    return saved ? JSON.parse(saved) : null;
-  });
+  // userGoal is now always sourced from Firestore via useUserFitnessGoal
 
   // AI Plan state management
   const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
@@ -534,7 +537,7 @@ export default function App() {
   const [fareScoreChange, setFareScoreChange] = useState(0); // Weekly change
 
   // Track authentication state
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  //const [currentUser, setCurrentUser] = useState<any>(null);
   
   // Listen for auth state changes
   useEffect(() => {
@@ -714,7 +717,7 @@ export default function App() {
     
     // Set all state with demo data
     setUser(demoUser);
-    setUserGoal(demoGoal);
+  // setUserGoal(demoGoal); // REMOVED: userGoal is now always from Firestore
     setLoggedMacros(demoMacros);
     setWorkoutData(demoWorkout);
     setFareScore(615);
@@ -753,7 +756,7 @@ export default function App() {
 
   const handleSaveGoal = async (goalData: GoalData) => {
     console.log('💾 Saving goal data to Fitness_Goals collection:', goalData);
-    setUserGoal(goalData);
+  // setUserGoal(goalData); // REMOVED: userGoal is now always from Firestore
     
     try {
       // Save to localStorage for immediate use
@@ -976,6 +979,7 @@ export default function App() {
           onNavigate={setCurrentPage}
           onFeedbackClick={() => setIsFeedbackOpen(true)}
           userGoal={userGoal}
+          planSummary={planSummary}
           loggedMacros={loggedMacros}
         />
         <FeedbackModal 
@@ -1060,6 +1064,8 @@ export default function App() {
       </div>
     );
   }
+
+  // (Removed duplicate useUserFitnessGoal hook call)
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--farefit-bg)' }}>

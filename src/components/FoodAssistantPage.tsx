@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Send, Apple, TrendingUp, ChefHat } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { getGeminiService } from '../services/geminiService';
+import { analyzeUserFoodContext } from '../services/foodAssistantService';
+import { useUserMeals } from '../hooks/useUserMeals';
 
 interface Message {
   id: string;
@@ -37,31 +38,84 @@ interface FoodAssistantPageProps {
   onNavigate: (page: 'dashboard' | 'progress' | 'help' | 'privacy' | 'terms' | 'fitness-goal' | 'coach-ai') => void;
   onFeedbackClick: () => void;
   userGoal: GoalData | null;
+  planSummary: any; // Add planSummary prop
   loggedMacros: LoggedMacros;
 }
 
-export function FoodAssistantPage({ onBack, userGoal, loggedMacros }: FoodAssistantPageProps) {
-  // Calculate remaining macros
+export function FoodAssistantPage({ onBack, userGoal, planSummary, loggedMacros }: FoodAssistantPageProps) {
+  // Get real meal data
+  const { meals, loading: mealsLoading } = useUserMeals();
+  
+  // Use planSummary as primary source of goal data (fallback to userGoal)
+  const activeGoal = planSummary || userGoal;
+  
+  // Only calculate macros if we have actual goal data
+  if (!activeGoal) {
+    console.warn('No goal data available in Food Assistant');
+  }
+
+  // Calculate remaining macros using the active goal (no hardcoded fallbacks)
+  const safe = (val: number | undefined, fallback = 0) => (typeof val === 'number' && !isNaN(val) ? val : fallback);
+  const macroTargets = {
+    calories: safe(activeGoal?.targetCalories, 0),
+    protein: safe(activeGoal?.macros?.protein ?? activeGoal?.protein, 0),
+    carbs: safe(activeGoal?.macros?.carbs ?? activeGoal?.carbs, 0),
+    fat: safe(activeGoal?.macros?.fat ?? activeGoal?.fat, 0),
+    fiber: safe(activeGoal?.fiber, 30),
+  };
   const remainingMacros = {
-    calories: userGoal ? userGoal.targetCalories - loggedMacros.calories : 750,
-    protein: userGoal ? userGoal.protein - loggedMacros.protein : 70,
-    carbs: userGoal ? userGoal.carbs - loggedMacros.carbs : 80,
-    fat: userGoal ? userGoal.fat - loggedMacros.fat : 25,
-    fiber: 30 - loggedMacros.fiber,
+    calories: Math.max(0, macroTargets.calories - loggedMacros.calories),
+    protein: Math.max(0, macroTargets.protein - loggedMacros.protein),
+    carbs: Math.max(0, macroTargets.carbs - loggedMacros.carbs),
+    fat: Math.max(0, macroTargets.fat - loggedMacros.fat),
+    fiber: Math.max(0, macroTargets.fiber - loggedMacros.fiber),
   };
 
-  const goalType = userGoal?.goalType || 'maintain';
+  // Update circle calculations to use activeGoal (no hardcoded fallbacks)
+  const caloriesProgress = macroTargets.calories > 0 ? loggedMacros.calories / macroTargets.calories : 0;
+  const proteinProgress = macroTargets.protein > 0 ? loggedMacros.protein / macroTargets.protein : 0;
+  const carbsProgress = macroTargets.carbs > 0 ? loggedMacros.carbs / macroTargets.carbs : 0;
+  const fatProgress = macroTargets.fat > 0 ? loggedMacros.fat / macroTargets.fat : 0;
+  const fiberProgress = macroTargets.fiber > 0 ? loggedMacros.fiber / macroTargets.fiber : 0;
+
+  // Calculate percentages for display and glow effects
+  const caloriePercent = Math.round(caloriesProgress * 100);
+  const proteinPercent = Math.round(proteinProgress * 100);
+  const carbsPercent = Math.round(carbsProgress * 100);
+  const fatPercent = Math.round(fatProgress * 100);
+  const fiberPercent = Math.round(fiberProgress * 100);
+
+  // Target hit detection (90-110% range for most macros)
+  const calorieHit = caloriePercent >= 90 && caloriePercent <= 110;
+  const proteinHit = proteinPercent >= 90 && proteinPercent <= 110;
+  const carbsHit = carbsPercent >= 90 && carbsPercent <= 110;
+  const fatHit = fatPercent >= 90 && fatPercent <= 110;
+  const fiberHit = fiberPercent >= 90;
+
+  // Create dynamic AI message based on goal status
+  const createInitialMessage = () => {
+    if (!activeGoal) {
+      return `Hey there! 🍎 I'm your Food Assistant, here to help you with nutrition.\n\n⚠️ **I notice you don't have fitness goals set up yet.** Please set your goals first to get personalized macro tracking with beautiful progress rings and smart meal recommendations!\n\nWhat would you like help with?`;
+    }
+    const goalType = activeGoal.goalType || userGoal?.goalType || 'maintain';
+    const goalTypeDisplay = goalType.charAt(0).toUpperCase() + goalType.slice(1);
+    // Show 'N/A' if macro target is 0 (not set)
+    const macroDisplay = (val: number, target: number, unit = '') =>
+      target > 0 ? `${val}${unit}` : 'N/A';
+    return `Hey there! 🍎 I'm your Food Assistant, here to help you hit your **${goalTypeDisplay}** goals with smart meal suggestions.\n\nBased on your current progress today, you have **${macroDisplay(remainingMacros.calories, macroTargets.calories)} calories** left with **${macroDisplay(remainingMacros.protein, macroTargets.protein, 'g')} protein**, **${macroDisplay(remainingMacros.carbs, macroTargets.carbs, 'g')} carbs**, and **${macroDisplay(remainingMacros.fat, macroTargets.fat, 'g')} fat** remaining.\n\nWhat would you like help with?`;
+  };
 
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: `Hey there! 🍎 I'm your Food Assistant, here to help you hit your macro goals with smart meal suggestions.\n\nBased on your current progress today, you have **${remainingMacros.calories} calories** left with **${remainingMacros.protein}g protein**, **${remainingMacros.carbs}g carbs**, and **${remainingMacros.fat}g fat** remaining.\n\nWhat would you like help with?`,
+      text: createInitialMessage(),
       sender: 'assistant',
       timestamp: new Date(),
     },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -113,7 +167,7 @@ Protein left: ${remainingMacros.protein}g
 Carbs left: ${remainingMacros.carbs}g
 Fat left: ${remainingMacros.fat}g
 Fiber left: ${remainingMacros.fiber}g
-Goal type: ${goalType}
+Goal type: ${activeGoal?.goalType || 'maintain'}
 
 Your job:
 1. Analyze their nutrition and give tailored meal/snack suggestions.
@@ -189,7 +243,7 @@ Your job:
         </div>
       </div>
 
-      {/* Macro Status */}
+      {/* Macro Progress Rings */}
       <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         <div
           className="rounded-lg p-6 mb-6 transition-colors duration-300"
@@ -198,67 +252,397 @@ Your job:
             border: '1px solid var(--farefit-secondary)',
           }}
         >
+          <style>
+            {`
+              @keyframes pulse {
+                0%, 100% {
+                  transform: scale(1);
+                }
+                50% {
+                  transform: scale(1.02);
+                }
+              }
+            `}
+          </style>
+          
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="w-5 h-5" style={{ color: 'var(--farefit-primary)' }} />
             <h3 className="m-0" style={{ color: 'var(--farefit-text)' }}>
-              Today's Macro Status
+              {activeGoal ? `Today's Macro Status - ${(activeGoal.goalType || 'Maintain').charAt(0).toUpperCase() + (activeGoal.goalType || 'maintain').slice(1)} Goal` : "Today's Macro Status"}
             </h3>
+            {activeGoal && (
+              <span className="text-sm ml-2" style={{ color: 'var(--farefit-subtext)' }}>
+                ({activeGoal.targetCalories} kcal/day)
+              </span>
+            )}
           </div>
 
-          {userGoal ? (
-            <>
-              <div
-                className="mb-4 pb-4 border-b transition-colors duration-300"
-                style={{ borderColor: 'var(--farefit-secondary)' }}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 sm:gap-8">
+            {/* Calories */}
+            <div className="flex flex-col items-center">
+              <p className="text-sm mb-3" style={{ color: '#FFB6B9' }}>Calories</p>
+              <div 
+                className="relative w-24 h-24 lg:w-32 lg:h-32 mb-3 transition-all duration-500"
+                style={{
+                  boxShadow: calorieHit ? '0 0 20px rgba(255, 182, 185, 0.8), 0 0 40px rgba(255, 182, 185, 0.4)' : 'none',
+                  borderRadius: '50%',
+                  animation: calorieHit ? 'pulse 2s infinite' : 'none'
+                }}
               >
-                <p className="text-sm mb-2" style={{ color: 'var(--farefit-subtext)' }}>
-                  Goal:{' '}
-                  <span
-                    style={{
-                      color: 'var(--farefit-primary)',
-                      textTransform: 'capitalize',
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="#E8F4F2"
+                    strokeWidth="8"
+                    fill="none"
+                    className="lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#E8F4F2"
+                    strokeWidth="10"
+                    fill="none"
+                    className="hidden lg:block"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke={calorieHit ? "#FF8A8A" : "#FFB6B9"}
+                    strokeWidth={calorieHit ? "10" : "8"}
+                    fill="none"
+                    strokeDasharray={`${(caloriePercent / 100) * 251} 251`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke={calorieHit ? "#FF8A8A" : "#FFB6B9"}
+                    strokeWidth={calorieHit ? "12" : "10"}
+                    fill="none"
+                    strokeDasharray={`${(caloriePercent / 100) * 352} 352`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 hidden lg:block"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span 
+                    className={`text-xl lg:text-3xl transition-all duration-300 ${calorieHit ? 'font-bold scale-110' : ''}`} 
+                    style={{ 
+                      color: calorieHit ? '#FFB6B9' : '#102A43',
+                      textShadow: calorieHit ? '0 0 10px rgba(255, 182, 185, 0.6)' : 'none'
                     }}
                   >
-                    {goalType}
-                  </span>{' '}
-                  ({userGoal.targetCalories} kcal/day)
-                </p>
+                    {Math.round(loggedMacros.calories)}
+                  </span>
+                  <span className="text-xs lg:text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                    /{activeGoal?.targetCalories || 0}
+                  </span>
+                </div>
               </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                {[
-                  ['Remaining', remainingMacros.calories, remainingMacros.calories < 0 ? 'over' : 'kcal left'],
-                  ['Protein', remainingMacros.protein, `${loggedMacros.protein}/${userGoal.protein}g`],
-                  ['Carbs', remainingMacros.carbs, `${loggedMacros.carbs}/${userGoal.carbs}g`],
-                  ['Fat', remainingMacros.fat, `${loggedMacros.fat}/${userGoal.fat}g`],
-                  ['Fiber', remainingMacros.fiber, `${loggedMacros.fiber}/30g`],
-                ].map(([label, value, sub], i) => (
-                  <div key={i}>
-                    <p className="text-sm mb-1" style={{ color: 'var(--farefit-subtext)' }}>
-                      {label}
-                    </p>
-                    <p
-                      className="text-2xl"
-                      style={{
-                        color: Number(value) < 0 ? 'var(--farefit-accent)' : 'var(--farefit-primary)',
-                      }}
-                    >
-                      {Math.abs(value as number)}{label === 'Remaining' ? '' : 'g'}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--farefit-subtext)' }}>
-                      {sub}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-4">
-              <p style={{ color: 'var(--farefit-subtext)' }}>
-                No fitness goal set yet. Set your goals to get personalized macro tracking!
+              <p className="text-sm text-center" style={{ color: calorieHit ? '#FFB6B9' : '#102A43', opacity: calorieHit ? 1 : 0.6 }}>
+                {calorieHit ? '🏆 Target hit!' : `${Math.max(0, remainingMacros.calories)} left`}
               </p>
             </div>
-          )}
+
+            {/* Protein */}
+            <div className="flex flex-col items-center">
+              <p className="text-sm mb-3" style={{ color: '#F5A623' }}>Protein</p>
+              <div 
+                className="relative w-24 h-24 lg:w-32 lg:h-32 mb-3 transition-all duration-500"
+                style={{
+                  boxShadow: proteinHit ? '0 0 20px rgba(245, 166, 35, 0.8), 0 0 40px rgba(245, 166, 35, 0.4)' : 'none',
+                  borderRadius: '50%',
+                  animation: proteinHit ? 'pulse 2s infinite' : 'none'
+                }}
+              >
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="#E8F4F2"
+                    strokeWidth="8"
+                    fill="none"
+                    className="lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#E8F4F2"
+                    strokeWidth="10"
+                    fill="none"
+                    className="hidden lg:block"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke={proteinHit ? "#FFD700" : "#F5A623"}
+                    strokeWidth={proteinHit ? "10" : "8"}
+                    fill="none"
+                    strokeDasharray={`${(proteinPercent / 100) * 251} 251`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke={proteinHit ? "#FFD700" : "#F5A623"}
+                    strokeWidth={proteinHit ? "12" : "10"}
+                    fill="none"
+                    strokeDasharray={`${(proteinPercent / 100) * 352} 352`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 hidden lg:block"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span 
+                    className={`text-xl lg:text-3xl transition-all duration-300 ${proteinHit ? 'font-bold scale-110' : ''}`} 
+                    style={{ 
+                      color: proteinHit ? '#F5A623' : '#102A43',
+                      textShadow: proteinHit ? '0 0 10px rgba(245, 166, 35, 0.6)' : 'none'
+                    }}
+                  >
+                    {Math.round(loggedMacros.protein)}
+                  </span>
+                  <span className="text-xs lg:text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                    /{activeGoal?.macros?.protein || activeGoal?.protein || 0}g
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-center" style={{ color: proteinHit ? '#F5A623' : '#102A43', opacity: proteinHit ? 1 : 0.6 }}>
+                {proteinHit ? '🏆 Target hit!' : `${Math.max(0, remainingMacros.protein)}g left`}
+              </p>
+            </div>
+
+            {/* Carbs */}
+            <div className="flex flex-col items-center">
+              <p className="text-sm mb-3" style={{ color: '#4DD4AC' }}>Carbs</p>
+              <div 
+                className="relative w-24 h-24 lg:w-32 lg:h-32 mb-3 transition-all duration-500"
+                style={{
+                  boxShadow: carbsHit ? '0 0 20px rgba(77, 212, 172, 0.8), 0 0 40px rgba(77, 212, 172, 0.4)' : 'none',
+                  borderRadius: '50%',
+                  animation: carbsHit ? 'pulse 2s infinite' : 'none'
+                }}
+              >
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="#E8F4F2"
+                    strokeWidth="8"
+                    fill="none"
+                    className="lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#E8F4F2"
+                    strokeWidth="10"
+                    fill="none"
+                    className="hidden lg:block"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke={carbsHit ? "#22C55E" : "#4DD4AC"}
+                    strokeWidth={carbsHit ? "10" : "8"}
+                    fill="none"
+                    strokeDasharray={`${(carbsPercent / 100) * 251} 251`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke={carbsHit ? "#22C55E" : "#4DD4AC"}
+                    strokeWidth={carbsHit ? "12" : "10"}
+                    fill="none"
+                    strokeDasharray={`${(carbsPercent / 100) * 352} 352`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 hidden lg:block"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span 
+                    className={`text-xl lg:text-3xl transition-all duration-300 ${carbsHit ? 'font-bold scale-110' : ''}`} 
+                    style={{ 
+                      color: carbsHit ? '#4DD4AC' : '#102A43',
+                      textShadow: carbsHit ? '0 0 10px rgba(77, 212, 172, 0.6)' : 'none'
+                    }}
+                  >
+                    {Math.round(loggedMacros.carbs)}
+                  </span>
+                  <span className="text-xs lg:text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                    /{activeGoal?.macros?.carbs || activeGoal?.carbs || 0}g
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-center" style={{ color: carbsHit ? '#4DD4AC' : '#102A43', opacity: carbsHit ? 1 : 0.6 }}>
+                {carbsHit ? '🏆 Target hit!' : `${Math.max(0, remainingMacros.carbs)}g left`}
+              </p>
+            </div>
+
+            {/* Fat */}
+            <div className="flex flex-col items-center">
+              <p className="text-sm mb-3" style={{ color: '#8B5CF6' }}>Fat</p>
+              <div 
+                className="relative w-24 h-24 lg:w-32 lg:h-32 mb-3 transition-all duration-500"
+                style={{
+                  boxShadow: fatHit ? '0 0 20px rgba(139, 92, 246, 0.8), 0 0 40px rgba(139, 92, 246, 0.4)' : 'none',
+                  borderRadius: '50%',
+                  animation: fatHit ? 'pulse 2s infinite' : 'none'
+                }}
+              >
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="#E8F4F2"
+                    strokeWidth="8"
+                    fill="none"
+                    className="lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#E8F4F2"
+                    strokeWidth="10"
+                    fill="none"
+                    className="hidden lg:block"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke={fatHit ? "#A855F7" : "#8B5CF6"}
+                    strokeWidth={fatHit ? "10" : "8"}
+                    fill="none"
+                    strokeDasharray={`${(fatPercent / 100) * 251} 251`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke={fatHit ? "#A855F7" : "#8B5CF6"}
+                    strokeWidth={fatHit ? "12" : "10"}
+                    fill="none"
+                    strokeDasharray={`${(fatPercent / 100) * 352} 352`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 hidden lg:block"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span 
+                    className={`text-xl lg:text-3xl transition-all duration-300 ${fatHit ? 'font-bold scale-110' : ''}`} 
+                    style={{ 
+                      color: fatHit ? '#8B5CF6' : '#102A43',
+                      textShadow: fatHit ? '0 0 10px rgba(139, 92, 246, 0.6)' : 'none'
+                    }}
+                  >
+                    {Math.round(loggedMacros.fat)}
+                  </span>
+                  <span className="text-xs lg:text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                    /{activeGoal?.macros?.fat || activeGoal?.fat || 0}g
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-center" style={{ color: fatHit ? '#8B5CF6' : '#102A43', opacity: fatHit ? 1 : 0.6 }}>
+                {fatHit ? '🏆 Target hit!' : `${Math.max(0, remainingMacros.fat)}g left`}
+              </p>
+            </div>
+
+            {/* Fiber */}
+            <div className="flex flex-col items-center">
+              <p className="text-sm mb-3" style={{ color: '#1C7C54' }}>Fiber</p>
+              <div 
+                className="relative w-24 h-24 lg:w-32 lg:h-32 mb-3 transition-all duration-500"
+                style={{
+                  boxShadow: fiberHit ? '0 0 20px rgba(28, 124, 84, 0.8), 0 0 40px rgba(28, 124, 84, 0.4)' : 'none',
+                  borderRadius: '50%',
+                  animation: fiberHit ? 'pulse 2s infinite' : 'none'
+                }}
+              >
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="#E8F4F2"
+                    strokeWidth="8"
+                    fill="none"
+                    className="lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#E8F4F2"
+                    strokeWidth="10"
+                    fill="none"
+                    className="hidden lg:block"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke={fiberHit ? "#22C55E" : "#1C7C54"}
+                    strokeWidth={fiberHit ? "10" : "8"}
+                    fill="none"
+                    strokeDasharray={`${(fiberPercent / 100) * 251} 251`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 lg:hidden"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke={fiberHit ? "#22C55E" : "#1C7C54"}
+                    strokeWidth={fiberHit ? "12" : "10"}
+                    fill="none"
+                    strokeDasharray={`${(fiberPercent / 100) * 352} 352`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500 hidden lg:block"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span 
+                    className={`text-xl lg:text-3xl transition-all duration-300 ${fiberHit ? 'font-bold scale-110' : ''}`} 
+                    style={{ 
+                      color: fiberHit ? '#1C7C54' : '#102A43',
+                      textShadow: fiberHit ? '0 0 10px rgba(28, 124, 84, 0.6)' : 'none'
+                    }}
+                  >
+                    {Math.round(loggedMacros.fiber)}
+                  </span>
+                  <span className="text-xs lg:text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                    /{activeGoal?.fiber || 30}g
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-center" style={{ color: fiberHit ? '#1C7C54' : '#102A43', opacity: fiberHit ? 1 : 0.6 }}>
+                {fiberHit ? '🏆 Target hit!' : `${Math.max(0, remainingMacros.fiber)}g left`}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
