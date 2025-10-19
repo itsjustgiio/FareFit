@@ -6,6 +6,7 @@ import { MealDetailModal } from './MealDetailModal';
 import { FitnessScoreModal } from './FitnessScoreModal';
 import { motion } from 'motion/react';
 import { useUserMeals } from '../hooks/useUserMeals';
+import { getDateInEasternTimezone } from '../userService';
 
 interface DailyTimelinePageProps {
   onBack: () => void;
@@ -53,7 +54,7 @@ interface MealEntry {
 }
 
 export function DailyTimelinePage({ onBack, onNavigate, onFeedbackClick, userGoal, loggedMacros }: DailyTimelinePageProps) {
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(() => new Date(`${getDateInEasternTimezone()}T00:00:00`));
   const [selectedMeal, setSelectedMeal] = useState<MealEntry | null>(null);
   const [isFitnessScoreOpen, setIsFitnessScoreOpen] = useState(false);
 
