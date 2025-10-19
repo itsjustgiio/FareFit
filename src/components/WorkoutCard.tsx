@@ -31,8 +31,11 @@ Cardio
 
   // Calculate totals from workout data - these should always match the detail page
   const totalSets = workoutData?.exercises.reduce((sum, ex) => sum + ex.sets.length, 0) || 0;
-  const totalVolume = workoutData?.exercises.reduce((sum, ex) => 
-    sum + ex.sets.reduce((setSum, set) => setSum + set.volume, 0), 0) || 0;
+  const totalVolume = workoutData?.exercises.reduce((sum, ex) => {
+  if (!Array.isArray(ex.sets)) return sum; // skip invalid or missing sets
+  return sum + ex.sets.reduce((setSum, set) => setSum + (set.volume || 0), 0);
+}, 0) || 0;
+
   
   // Display values from workout data (no defaults - data should always be provided)
   const displayCalories = workoutData?.caloriesBurned || 0;
