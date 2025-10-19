@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Plus, Trash2, Camera, Upload, Sparkles, MessageSquare, Barcode, ChevronDown, ChevronUp, Check, Save, Info } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Camera, Upload, Sparkles, MessageSquare, Barcode, ChevronDown, ChevronUp, Check, Save, Info, Keyboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Label } from './ui/label';
@@ -8,11 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak} from '../userService';
+import { addMealToDailyNutrition, getTodayMeals, updateUserFareScoreOnLog, updateUserStreak, addBarcodeToHistory, getBarcodeHistory} from '../userService';
 import { getAuth } from 'firebase/auth';
 import { useEffect } from "react";
 import { BarcodeScannerCamera } from './BarcodeScannerCamera';
-import { fetchProductByBarcode } from '../services/barcodeScannerService';
+import { fetchProductByBarcode, isValidBarcode } from '../services/barcodeScannerService';
 
 interface FoodItem {
   id: string;
@@ -1031,6 +1031,22 @@ function BarcodeScanTab({ onFoodDetected }: any) {
   const [isScanning, setIsScanning] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [scannedData, setScannedData] = useState<any>(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualBarcode, setManualBarcode] = useState('');
+  const [recentlyScanned, setRecentlyScanned] = useState<any[]>([]);
+
+  // Fetch barcode history on mount
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const auth = getAuth();
+      if (auth.currentUser) {
+        const history = await getBarcodeHistory(auth.currentUser.uid);
+        setRecentlyScanned(history);
+        console.log('📜 Loaded barcode history:', history.length, 'products');
+      }
+    };
+    fetchHistory();
+  }, []);
 
   const handleStartScan = () => {
     setIsScanning(true);
@@ -1066,6 +1082,26 @@ function BarcodeScanTab({ onFoodDetected }: any) {
 
         setScannedData(formattedData);
         toast.success(`✓ Found: ${productData.name}!`);
+
+        // Save to barcode history
+        const auth = getAuth();
+        if (auth.currentUser) {
+          await addBarcodeToHistory(auth.currentUser.uid, {
+            barcode: barcode,
+            product_name: productData.name,
+            brand_name: productData.brandName,
+            calories: productData.calories,
+            protein: productData.protein,
+            carbs: productData.carbs,
+            fats: productData.fat,
+            fiber: productData.fiber,
+            serving_size: productData.servingSize,
+          });
+          // Refresh history
+          const updatedHistory = await getBarcodeHistory(auth.currentUser.uid);
+          setRecentlyScanned(updatedHistory);
+          console.log('💾 Saved to barcode history');
+        }
       } else {
         toast.error(`Product not found or missing nutrition data. Use manual entry.`, {
           duration: 4000,
@@ -1093,6 +1129,44 @@ function BarcodeScanTab({ onFoodDetected }: any) {
       setScannedData(null);
       toast.success('Item added to your meal!');
     }
+  };
+
+  const handleManualLookup = async () => {
+    if (!isValidBarcode(manualBarcode)) {
+      toast.error('Invalid barcode format. Must be 8-14 digits.');
+      return;
+    }
+
+    setIsFetching(true);
+    try {
+      await handleBarcodeDetected(manualBarcode);
+      setManualBarcode('');
+      setManualMode(false);
+    } catch (error) {
+      console.error('Manual lookup error:', error);
+    }
+  };
+
+  const handleQuickAdd = (product: any) => {
+    const formattedData = {
+      name: product.product_name,
+      brandName: product.brand_name,
+      servingSize: product.serving_size,
+      amountConsumed: 1,
+      baseCalories: product.calories,
+      baseProtein: product.protein,
+      baseCarbs: product.carbs,
+      baseFat: product.fats,
+      baseFiber: product.fiber,
+      calories: product.calories,
+      protein: product.protein,
+      carbs: product.carbs,
+      fat: product.fats,
+      fiber: product.fiber,
+    };
+
+    onFoodDetected(formattedData);
+    toast.success(`✓ Added: ${product.product_name}!`);
   };
 
   return (
@@ -1125,43 +1199,149 @@ function BarcodeScanTab({ onFoodDetected }: any) {
           </div>
         ) : !scannedData ? (
           // Start Scan State
-          <div className="text-center">
-            <div
-              className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center"
-              style={{ backgroundColor: '#E8F4F2' }}
-            >
-              <Barcode className="w-12 h-12" style={{ color: '#1C7C54' }} />
-            </div>
+          <div className="space-y-6">
+            <div className="text-center">
+              <div
+                className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center"
+                style={{ backgroundColor: '#E8F4F2' }}
+              >
+                <Barcode className="w-12 h-12" style={{ color: '#1C7C54' }} />
+              </div>
 
-            <h3 className="mb-2" style={{ color: '#102A43' }}>
-              Scan Product Barcode
-            </h3>
-            <p className="mb-6 text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
-              Point your camera at the barcode on the package
-            </p>
-
-            <button
-              onClick={handleStartScan}
-              className="px-8 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2 mx-auto"
-              style={{ backgroundColor: '#1C7C54' }}
-            >
-              <Camera className="w-5 h-5" />
-              Start Scanning
-            </button>
-
-            <div className="mt-8 p-4 rounded-lg text-left" style={{ backgroundColor: '#E8F4F2' }}>
-              <p className="text-sm mb-2" style={{ color: '#102A43' }}>
-                <strong>📱 Tips for better scanning:</strong>
+              <h3 className="mb-2" style={{ color: '#102A43' }}>
+                Scan Product Barcode
+              </h3>
+              <p className="mb-6 text-sm" style={{ color: '#102A43', opacity: 0.6 }}>
+                Point your camera at the barcode on the package
               </p>
-              <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
-                <li>• Hold camera steady 4-8 inches from barcode</li>
-                <li>• Ensure good lighting (avoid shadows/glare)</li>
-                <li>• Keep barcode flat and fully visible</li>
-                <li>• Try different angles if not detecting</li>
-                <li>• Works best with UPC & EAN barcodes</li>
-                <li>• Database: 1.3M+ products with nutrition data</li>
-              </ul>
+
+              <div className="flex gap-3 justify-center mb-6">
+                <button
+                  onClick={handleStartScan}
+                  className="px-8 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: '#1C7C54' }}
+                >
+                  <Camera className="w-5 h-5" />
+                  Start Scanning
+                </button>
+                <button
+                  onClick={() => setManualMode(!manualMode)}
+                  className="px-6 py-3 rounded-lg border-2 transition-all hover:bg-gray-50 flex items-center justify-center gap-2"
+                  style={{ borderColor: '#A8E6CF', color: '#1C7C54' }}
+                >
+                  <Keyboard className="w-5 h-5" />
+                  Manual Entry
+                </button>
+              </div>
+
+              {/* Manual Barcode Entry */}
+              {manualMode && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-6 p-4 rounded-lg text-left"
+                  style={{ backgroundColor: '#E8F4F2' }}
+                >
+                  <p className="text-sm mb-3" style={{ color: '#102A43' }}>
+                    <strong>Enter Barcode Manually:</strong>
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="e.g., 012345678901"
+                      value={manualBarcode}
+                      onChange={(e) => setManualBarcode(e.target.value.replace(/\D/g, ''))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleManualLookup();
+                        }
+                      }}
+                      maxLength={14}
+                      className="flex-1"
+                    />
+                    <button
+                      onClick={handleManualLookup}
+                      disabled={manualBarcode.length < 8}
+                      className="px-4 py-2 rounded-lg text-white transition-all hover:opacity-90 disabled:opacity-50"
+                      style={{ backgroundColor: '#1C7C54' }}
+                    >
+                      Look Up
+                    </button>
+                  </div>
+                  <p className="text-xs mt-2" style={{ color: '#102A43', opacity: 0.6 }}>
+                    Enter 8-14 digit barcode (UPC, EAN, etc.)
+                  </p>
+                </motion.div>
+              )}
+
+              <div className="mt-8 p-4 rounded-lg text-left" style={{ backgroundColor: '#E8F4F2' }}>
+                <p className="text-sm mb-2" style={{ color: '#102A43' }}>
+                  <strong>📱 Tips for better scanning:</strong>
+                </p>
+                <ul className="text-sm space-y-1" style={{ color: '#102A43', opacity: 0.8 }}>
+                  <li>• Hold camera steady 4-8 inches from barcode</li>
+                  <li>• Ensure good lighting (avoid shadows/glare)</li>
+                  <li>• Keep barcode flat and fully visible</li>
+                  <li>• Try different angles if not detecting</li>
+                  <li>• Works best with UPC & EAN barcodes</li>
+                  <li>• Database: 1.3M+ products with nutrition data</li>
+                </ul>
+              </div>
             </div>
+
+            {/* Recently Scanned Products */}
+            {recentlyScanned.length > 0 && (
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 style={{ color: '#102A43' }}>Recently Scanned</h4>
+                  <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: '#E8F4F2', color: '#1C7C54' }}>
+                    {recentlyScanned.length} products
+                  </span>
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {recentlyScanned.map((product, index) => (
+                    <div
+                      key={index}
+                      className="p-3 rounded-lg border-2 hover:bg-gray-50 transition-all"
+                      style={{ borderColor: '#E8F4F2' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm" style={{ color: '#102A43' }}>
+                            {product.product_name}
+                          </p>
+                          {product.brand_name && (
+                            <p className="text-xs" style={{ color: '#102A43', opacity: 0.6 }}>
+                              {product.brand_name}
+                            </p>
+                          )}
+                          <div className="flex gap-3 mt-1 text-xs" style={{ color: '#102A43', opacity: 0.7 }}>
+                            <span>{product.calories} kcal</span>
+                            <span>P: {product.protein}g</span>
+                            <span>C: {product.carbs}g</span>
+                            <span>F: {product.fats}g</span>
+                          </div>
+                          {product.scan_count > 1 && (
+                            <p className="text-xs mt-1" style={{ color: '#1C7C54' }}>
+                              Scanned {product.scan_count}x
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleQuickAdd(product)}
+                          className="px-4 py-2 rounded-lg text-white transition-all hover:opacity-90 flex items-center gap-1"
+                          style={{ backgroundColor: '#1C7C54' }}
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           // Product Found State

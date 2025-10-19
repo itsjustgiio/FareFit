@@ -244,6 +244,90 @@ export const getUserFitnessGoals = async (userId: string) => {
   }
 };
 
+// ========== Barcode History Functions ==========
+export const addBarcodeToHistory = async (
+  userId: string,
+  productData: {
+    barcode: string;
+    product_name: string;
+    brand_name: string;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    fiber: number;
+    serving_size: string;
+  }
+) => {
+  try {
+    const docRef = doc(db, "Barcode_History", userId);
+    const docSnap = await getDoc(docRef);
+
+    let scannedProducts: any[] = [];
+
+    if (docSnap.exists()) {
+      scannedProducts = docSnap.data()?.scanned_products || [];
+    }
+
+    // Check if product already exists
+    const existingIndex = scannedProducts.findIndex(
+      (p: any) => p.barcode === productData.barcode
+    );
+
+    if (existingIndex >= 0) {
+      // Update existing product - increment scan count
+      scannedProducts[existingIndex] = {
+        ...scannedProducts[existingIndex],
+        scan_count: scannedProducts[existingIndex].scan_count + 1,
+        last_scanned: Timestamp.now(),
+      };
+    } else {
+      // Add new product
+      scannedProducts.push({
+        ...productData,
+        scan_count: 1,
+        first_scanned: Timestamp.now(),
+        last_scanned: Timestamp.now(),
+      });
+    }
+
+    // Sort by last_scanned (most recent first)
+    scannedProducts.sort((a: any, b: any) =>
+      b.last_scanned.toMillis() - a.last_scanned.toMillis()
+    );
+
+    // Keep only last 20 products to avoid bloat
+    scannedProducts = scannedProducts.slice(0, 20);
+
+    // Create or update document
+    if (docSnap.exists()) {
+      await updateDoc(docRef, { scanned_products: scannedProducts });
+    } else {
+      await setDoc(docRef, { scanned_products: scannedProducts });
+    }
+
+    console.log("✅ Barcode added to history!");
+  } catch (err) {
+    console.error("❌ Error adding barcode to history:", err);
+  }
+};
+
+export const getBarcodeHistory = async (userId: string) => {
+  try {
+    const docRef = doc(db, "Barcode_History", userId);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      return [];
+    }
+
+    return docSnap.data()?.scanned_products || [];
+  } catch (error) {
+    console.error("❌ Error fetching barcode history:", error);
+    return [];
+  }
+};
+
 export const updateUserStreak = async (userId: string) => {
   const fareRef = doc(db, "FareScore", userId);
   const fareSnap = await getDoc(fareRef);
