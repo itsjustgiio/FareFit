@@ -150,24 +150,49 @@ export function NutritionLabelCamera({
                 />
 
                 {/* Bottom Action Bar */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent">
-                  <div className="flex gap-3 justify-center">
-                    <button
-                      onClick={handleRetake}
-                      className="px-6 py-3 rounded-lg border-2 border-white text-white transition-all hover:bg-white/10 flex items-center gap-2"
-                    >
-                      <RotateCcw className="w-5 h-5" />
-                      Retake
-                    </button>
-                    <button
-                      onClick={handleConfirm}
-                      className="px-8 py-3 rounded-lg text-white transition-all hover:opacity-90 flex items-center gap-2"
-                      style={{ backgroundColor: '#1C7C54' }}
-                    >
-                      <Check className="w-5 h-5" />
-                      Use This Photo
-                    </button>
-                  </div>
+                <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 bg-gradient-to-t from-black via-black/95 to-transparent">
+                  <motion.div
+                    initial={{ y: 50, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className="max-w-md mx-auto space-y-3"
+                  >
+                    <p className="text-center text-white text-sm font-semibold">
+                      Is the nutrition label readable?
+                    </p>
+                    <div className="flex gap-3">
+                      <motion.button
+                        onClick={handleRetake}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="flex-1 py-3 rounded-xl font-semibold text-base flex items-center justify-center gap-2 border-2"
+                        style={{
+                          backgroundColor: '#FF3B30',
+                          borderColor: '#FFF',
+                          color: '#FFF',
+                          boxShadow: '0 4px 20px rgba(255, 59, 48, 0.6)',
+                        }}
+                      >
+                        <RotateCcw className="w-5 h-5" />
+                        Retake
+                      </motion.button>
+                      <motion.button
+                        onClick={handleConfirm}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="flex-1 py-3 rounded-xl font-semibold text-base flex items-center justify-center gap-2 border-2"
+                        style={{
+                          backgroundColor: '#34C759',
+                          borderColor: '#FFF',
+                          color: '#FFF',
+                          boxShadow: '0 4px 20px rgba(52, 199, 89, 0.6)',
+                        }}
+                      >
+                        <Check className="w-5 h-5" />
+                        Use Photo
+                      </motion.button>
+                    </div>
+                  </motion.div>
                 </div>
 
                 {/* Top Close Button */}
