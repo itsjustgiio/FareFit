@@ -52,7 +52,7 @@ export function Footer({ onNavigate, onFeedbackClick }: FooterProps) {
               {links.map((link, index) => (
                 <a
                   key={index}
-                  href={'page' in link || 'action' in link ? '#' : link.href}
+                  href={isExternalLink(link) ? link.href : '#'}
                   target={isExternalLink(link) ? '_blank' : undefined}
                   rel={isExternalLink(link) ? 'noopener noreferrer' : undefined}
                   onClick={(e) => handleClick(link, e)}
