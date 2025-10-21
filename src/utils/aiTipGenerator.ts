@@ -34,7 +34,7 @@ export function generateAITip(context: UserContext): AITip {
   if (isNewUser) {
     return getNewUserTip(hour);
   }
-  
+  //quick edits
   // Time-based tips with user progress
   if (hour >= 5 && hour < 12) {
     return getMorningTip(context);
